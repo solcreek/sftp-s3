@@ -50,6 +50,10 @@ func (u *userFS) Filewrite(r *sftp.Request) (io.WriterAt, error) {
 	up := manager.NewUploader(u.client, func(m *manager.Uploader) {
 		m.PartSize = u.partSize
 		m.Concurrency = 4
+		// The uploader has its own checksum setting that defaults to "always"
+		// regardless of the client's; S3-compatible stores such as GCS reject
+		// the resulting per-part CRC32 checksums.
+		m.RequestChecksumCalculation = u.client.Options().RequestChecksumCalculation
 	})
 	slog.Info("upload start", "key", key)
 	return newStreamWriter(u.maxReorder, func(body io.Reader) error {

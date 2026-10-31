@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pkg/sftp"
 )
@@ -89,6 +90,29 @@ func TestUploadRoundTrip(t *testing.T) {
 				t.Fatalf("download: %d bytes, want %d identical bytes", len(back), size)
 			}
 		})
+	}
+}
+
+// Compatible stores (GCS among them) reject per-part checksums, so when the
+// client is configured to send checksums only when required, multipart
+// uploads must not add them on their own.
+func TestUploadHonorsClientChecksumMode(t *testing.T) {
+	for _, mode := range []aws.RequestChecksumCalculation{
+		aws.RequestChecksumCalculationWhenRequired, aws.RequestChecksumCalculationWhenSupported,
+	} {
+		e := newEnv(t, func(c *Config) {
+			o := c.Client.Options()
+			o.RequestChecksumCalculation = mode
+			c.Client = s3.New(o)
+		})
+		if e.seen == nil {
+			t.Skip("needs the in-memory store to inspect requests")
+		}
+		upload(t, e.sftp("alice"), "/big.bin", randBytes(t, 11<<20)) // multipart
+		sent := e.seen.any("x-amz-checksum-") || e.seen.any("x-amz-sdk-checksum-") || e.seen.any("x-amz-trailer")
+		if want := mode == aws.RequestChecksumCalculationWhenSupported; sent != want {
+			t.Errorf("mode %v: checksum headers sent = %v, want %v", mode, sent, want)
+		}
 	}
 }
 

@@ -7,10 +7,12 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -39,6 +41,7 @@ type env struct {
 	s3     *s3.Client
 	addr   string
 	hostPK ssh.PublicKey
+	seen   *headerLog // request headers the store received; in-memory store only
 	bucket string
 	base   string // key prefix this test owns; "" on the in-memory store
 }
@@ -48,8 +51,9 @@ type envOpt func(*Config)
 func newEnv(t *testing.T, opts ...envOpt) *env {
 	t.Helper()
 	client, bucket, base := conformanceStore(t)
+	var seen *headerLog
 	if client == nil {
-		client, bucket = memoryStore(t)
+		client, bucket, seen = memoryStore(t)
 	}
 
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
@@ -87,7 +91,7 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 			t.Errorf("Serve: %v", err)
 		}
 	})
-	return &env{t: t, s3: client, addr: ln.Addr().String(), hostPK: signer.PublicKey(), bucket: bucket, base: base}
+	return &env{t: t, s3: client, addr: ln.Addr().String(), hostPK: signer.PublicKey(), seen: seen, bucket: bucket, base: base}
 }
 
 func (e *env) sshDial(user, pass string) (*ssh.Client, error) {
@@ -141,21 +145,47 @@ func (e *env) put(key string, body []byte) {
 	}
 }
 
+// headerLog records which request header names a store has received.
+type headerLog struct {
+	mu    sync.Mutex
+	names map[string]bool
+}
+
+func (h *headerLog) any(prefix string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for n := range h.names {
+		if strings.HasPrefix(strings.ToLower(n), prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // memoryStore starts an in-memory S3 (gofakes3) for this test.
-func memoryStore(t *testing.T) (*s3.Client, string) {
+func memoryStore(t *testing.T) (*s3.Client, string, *headerLog) {
 	t.Helper()
 	backend := s3mem.New()
 	if err := backend.CreateBucket(testBucket); err != nil {
 		t.Fatal(err)
 	}
-	fake := httptest.NewServer(gofakes3.New(backend).Server())
+	seen := &headerLog{names: map[string]bool{}}
+	handler := gofakes3.New(backend).Server()
+	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen.mu.Lock()
+		for n := range r.Header {
+			seen.names[n] = true
+		}
+		seen.mu.Unlock()
+		handler.ServeHTTP(w, r)
+	}))
 	t.Cleanup(fake.Close)
 	return s3.New(s3.Options{
 		Region:       "us-east-1",
 		BaseEndpoint: aws.String(fake.URL),
 		UsePathStyle: true,
 		Credentials:  credentials.NewStaticCredentialsProvider("test", "test", ""),
-	}), testBucket
+	}), testBucket, seen
 }
 
 // runID keeps concurrent conformance runs against one bucket apart.
