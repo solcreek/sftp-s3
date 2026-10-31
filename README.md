@@ -1,12 +1,11 @@
 # sftp-s3
 
-Two proof-of-concept SFTP servers whose filesystem is an S3 bucket: users
-upload with any SFTP client and the bytes stream straight into S3 (multipart),
-never touching local disk.
+An SFTP server whose filesystem is an S3 bucket: users upload with any SFTP
+client and the bytes stream straight into S3 (multipart), never touching local
+disk. Written in Go: `golang.org/x/crypto/ssh` + `github.com/pkg/sftp` (request
+server) + `aws-sdk-go-v2` upload manager.
 
-- `go/` — `golang.org/x/crypto/ssh` + `github.com/pkg/sftp` (request server) + `aws-sdk-go-v2` upload manager
-- `rust/` — `russh` 0.65 + `russh-sftp` 3.0 + `aws-sdk-s3` (hand-rolled streaming multipart)
-- `scripts/e2e.sh` — functional test + rough benchmark against any S3 endpoint
+`scripts/e2e.sh` is a functional test + rough benchmark against any S3 endpoint.
 
 ## Where it can run
 
@@ -29,14 +28,19 @@ App Runner and Render have the same HTTP-only limit.
 export S3_BUCKET=my-bucket AWS_REGION=... SFTP_USERS='alice:secret,bob:other'
 export SFTP_HOST_KEY="$(cat host_ed25519)"   # pin it; otherwise a new key per start
 # optional: S3_ENDPOINT=http://127.0.0.1:9000 (MinIO/R2, path-style), S3_PREFIX=sftp/, PORT=2222
-go/sftp-s3-go        # or rust/target/release/sftp-s3-rs
+go/sftp-s3-go
 ```
 
 Each user is chrooted to `s3://$S3_BUCKET/$S3_PREFIX<user>/`; `..` cannot escape.
 Supported: put, get, ls, stat, mkdir (zero-byte `dir/` marker), rmdir, rm, rename
 (copy+delete, ≤ 5 GB), setstat (accepted, ignored).
 
-## Measured (2026-10-31, s-imac i9-10910, MinIO on localhost, OpenSSH sftp)
+## Why Go (decision record)
+
+A Rust POC (`russh` 0.65 + `russh-sftp` 3.0 + `aws-sdk-s3`) was built alongside
+and removed after this comparison; it lives in git history (commit 58d207a).
+
+### Measured (2026-10-31, s-imac i9-10910, MinIO on localhost, OpenSSH sftp)
 
 1 GiB random file, `put` then md5 verified in S3. 3 runs each.
 
@@ -50,19 +54,15 @@ Supported: put, get, ls, stat, mkdir (zero-byte `dir/` marker), rmdir, rm, renam
 | dependency count | 31 modules | ~420 crates |
 | clean release build | ~19 s | ~2.5 min (thin LTO) |
 
-Throughput is bound by local MinIO, not by either server. Treat it as "both are
-fast enough". The Rust RSS gap is **not yet explained**. Each session holds at most
-4×8 MiB parts in flight, so ~200 MB means something else buffers: suspects are
-russh channel buffering and SDK body handling. Profile before drawing conclusions.
-Docker images were not built (no Docker daemon on the test host).
+Throughput was bound by local MinIO, so both were fast enough. Go won on
+memory (the Rust RSS gap was never explained), dependency count, and build
+time.
 
-## Design notes / traps (both versions)
+## Design notes / traps
 
 - **Out-of-order writes.** `pkg/sftp` runs 8 workers, so `WriteAt` offsets arrive
   out of order; the Go writer parks chunks in a bounded (64 MiB) reorder buffer.
-  `russh-sftp` handles one request at a time per session (in order), so the Rust
-  version ships full parts to background tasks; otherwise each write would stall
-  on S3. Writes behind the stream position (true random access, e.g. resume) are
+  Writes behind the stream position (true random access, e.g. resume) are
   rejected: S3 objects are immutable.
 - **Upload result = CLOSE status.** The multipart completion error is returned on
   `SSH_FXP_CLOSE`, so a failed upload is never reported as success.
