@@ -2,14 +2,17 @@ package gateway
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pkg/sftp"
 )
 
@@ -181,10 +184,25 @@ func TestDirectories(t *testing.T) {
 
 func TestListPaginates(t *testing.T) {
 	e := newEnv(t)
-	const n = 1005 // ListObjectsV2 returns at most 1000 keys per page
-	for i := range n {
-		e.put(fmt.Sprintf("alice/many/f%04d", i), nil)
+	if testing.Short() {
+		t.Skip("creates 1005 objects")
 	}
+	const n = 1005 // ListObjectsV2 returns at most 1000 keys per page
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 32)
+	for i := range n {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			key := fmt.Sprintf("%salice/many/f%04d", e.base, i)
+			if _, err := e.s3.PutObject(context.Background(), &s3.PutObjectInput{
+				Bucket: &e.bucket, Key: &key, Body: bytes.NewReader(nil)}); err != nil {
+				t.Error(err) // not Fatal: this is not the test goroutine
+			}
+		}()
+	}
+	wg.Wait()
 	if got := len(names(t, e.sftp("alice"), "/many")); got != n {
 		t.Fatalf("listed %d entries, want %d", got, n)
 	}
@@ -284,7 +302,7 @@ func TestUsersAreIsolated(t *testing.T) {
 }
 
 func TestPrefix(t *testing.T) {
-	e := newEnv(t, func(c *Config) { c.Prefix = "tenants/" })
+	e := newEnv(t, func(c *Config) { c.Prefix += "tenants/" })
 	upload(t, e.sftp("alice"), "/x.txt", []byte("x"))
 	if _, ok := e.object("tenants/alice/x.txt"); !ok {
 		t.Fatal("object not written under the configured prefix")

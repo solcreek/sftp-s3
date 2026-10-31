@@ -9,7 +9,10 @@ import (
 	"net"
 	"net/http/httptest"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -18,6 +21,8 @@ import (
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/solcreek/sftp-s3/internal/s3client"
 )
 
 const testBucket = "test-bucket"
@@ -34,26 +39,18 @@ type env struct {
 	s3     *s3.Client
 	addr   string
 	hostPK ssh.PublicKey
-	prefix string
+	bucket string
+	base   string // key prefix this test owns; "" on the in-memory store
 }
 
 type envOpt func(*Config)
 
 func newEnv(t *testing.T, opts ...envOpt) *env {
 	t.Helper()
-	backend := s3mem.New()
-	if err := backend.CreateBucket(testBucket); err != nil {
-		t.Fatal(err)
+	client, bucket, base := conformanceStore(t)
+	if client == nil {
+		client, bucket = memoryStore(t)
 	}
-	fake := httptest.NewServer(gofakes3.New(backend).Server())
-	t.Cleanup(fake.Close)
-
-	client := s3.New(s3.Options{
-		Region:       "us-east-1",
-		BaseEndpoint: aws.String(fake.URL),
-		UsePathStyle: true,
-		Credentials:  credentials.NewStaticCredentialsProvider("test", "test", ""),
-	})
 
 	_, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -65,7 +62,8 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	}
 	cfg := Config{
 		Client:   client,
-		Bucket:   testBucket,
+		Bucket:   bucket,
+		Prefix:   base,
 		Users:    map[string]string{"alice": "alice-pw", "bob": "bob-pw"},
 		HostKey:  signer,
 		PartSize: 5 << 20, // S3's minimum, so multi-part paths run on small files
@@ -89,7 +87,7 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 			t.Errorf("Serve: %v", err)
 		}
 	})
-	return &env{t: t, s3: client, addr: ln.Addr().String(), hostPK: signer.PublicKey(), prefix: cfg.Prefix}
+	return &env{t: t, s3: client, addr: ln.Addr().String(), hostPK: signer.PublicKey(), bucket: bucket, base: base}
 }
 
 func (e *env) sshDial(user, pass string) (*ssh.Client, error) {
@@ -116,10 +114,11 @@ func (e *env) sftp(user string, opts ...sftp.ClientOption) *sftp.Client {
 	return c
 }
 
-// object returns the S3 object body at key, or ok=false if it does not exist.
+// object returns the body of the object at key (relative to the test's
+// base prefix), or ok=false if it does not exist.
 func (e *env) object(key string) (body []byte, ok bool) {
 	e.t.Helper()
-	out, err := e.s3.GetObject(context.Background(), &s3.GetObjectInput{Bucket: aws.String(testBucket), Key: aws.String(key)})
+	out, err := e.s3.GetObject(context.Background(), &s3.GetObjectInput{Bucket: &e.bucket, Key: aws.String(e.base + key)})
 	if err != nil {
 		return nil, false
 	}
@@ -131,12 +130,90 @@ func (e *env) object(key string) (body []byte, ok bool) {
 	return b, true
 }
 
-// put writes an object straight to S3, bypassing the gateway.
+// put writes an object (key relative to the base prefix) straight to the
+// store, bypassing the gateway.
 func (e *env) put(key string, body []byte) {
 	e.t.Helper()
 	_, err := e.s3.PutObject(context.Background(), &s3.PutObjectInput{
-		Bucket: aws.String(testBucket), Key: aws.String(key), Body: bytesReader(body)})
+		Bucket: &e.bucket, Key: aws.String(e.base + key), Body: bytesReader(body)})
 	if err != nil {
 		e.t.Fatal(err)
+	}
+}
+
+// memoryStore starts an in-memory S3 (gofakes3) for this test.
+func memoryStore(t *testing.T) (*s3.Client, string) {
+	t.Helper()
+	backend := s3mem.New()
+	if err := backend.CreateBucket(testBucket); err != nil {
+		t.Fatal(err)
+	}
+	fake := httptest.NewServer(gofakes3.New(backend).Server())
+	t.Cleanup(fake.Close)
+	return s3.New(s3.Options{
+		Region:       "us-east-1",
+		BaseEndpoint: aws.String(fake.URL),
+		UsePathStyle: true,
+		Credentials:  credentials.NewStaticCredentialsProvider("test", "test", ""),
+	}), testBucket
+}
+
+// runID keeps concurrent conformance runs against one bucket apart.
+var runID = time.Now().UTC().Format("20060102T150405") + "-" + strconv.Itoa(os.Getpid())
+
+// conformanceStore returns a client for a real store when CONFORMANCE_BUCKET
+// is set, built exactly as production builds it (internal/s3client), so the
+// suite proves the settings a deployment would use:
+//
+//	CONFORMANCE_BUCKET    bucket to use (required to enable)
+//	CONFORMANCE_ENDPOINT  S3_ENDPOINT equivalent; empty means AWS
+//	CONFORMANCE_REGION, CONFORMANCE_PATH_STYLE, CONFORMANCE_CHECKSUM
+//
+// Credentials come from the SDK chain (AWS_PROFILE, AWS_ACCESS_KEY_ID, ...).
+// Each test owns sftp-s3-conformance/<run>/<test>/ and deletes it afterwards.
+func conformanceStore(t *testing.T) (*s3.Client, string, string) {
+	t.Helper()
+	bucket := os.Getenv("CONFORMANCE_BUCKET")
+	if bucket == "" {
+		return nil, "", ""
+	}
+	client, _, err := s3client.New(context.Background(), s3client.Options{
+		Endpoint:  os.Getenv("CONFORMANCE_ENDPOINT"),
+		Region:    os.Getenv("CONFORMANCE_REGION"),
+		PathStyle: os.Getenv("CONFORMANCE_PATH_STYLE"),
+		Checksum:  os.Getenv("CONFORMANCE_CHECKSUM"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := "sftp-s3-conformance/" + runID + "/" + strings.ReplaceAll(t.Name(), "/", "_") + "/"
+	t.Cleanup(func() { deletePrefix(t, client, bucket, base) })
+	return client, bucket, base
+}
+
+// deletePrefix removes every object and unfinished multipart upload under
+// prefix, one request per object: multi-object delete is not available on
+// every compatible store (GCS's XML API lacks it).
+func deletePrefix(t *testing.T, c *s3.Client, bucket, prefix string) {
+	ctx := context.Background()
+	pg := s3.NewListObjectsV2Paginator(c, &s3.ListObjectsV2Input{Bucket: &bucket, Prefix: &prefix})
+	for pg.HasMorePages() {
+		out, err := pg.NextPage(ctx)
+		if err != nil {
+			t.Errorf("cleanup list %s: %v", prefix, err)
+			return
+		}
+		for _, o := range out.Contents {
+			if _, err := c.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &bucket, Key: o.Key}); err != nil {
+				t.Errorf("cleanup delete %s: %v", *o.Key, err)
+			}
+		}
+	}
+	mu, err := c.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{Bucket: &bucket, Prefix: &prefix})
+	if err != nil {
+		return // not every store lists uploads; a lifecycle rule is the backstop
+	}
+	for _, u := range mu.Uploads {
+		c.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{Bucket: &bucket, Key: u.Key, UploadId: u.UploadId})
 	}
 }
