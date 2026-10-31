@@ -53,7 +53,7 @@ Credentials always come from the AWS SDK chain (`AWS_ACCESS_KEY_ID` /
 |---|---|---|---|
 | AWS S3 | (unset) | | ✅ 2026-10-31, ap-northeast-1 |
 | Google Cloud Storage | `https://storage.googleapis.com` | HMAC key of a service account with `roles/storage.objectAdmin` | ✅ 2026-10-31, asia-northeast1 |
-| Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` | `S3_REGION=auto`; R2 API token's access key / secret | ⏳ pending credentials |
+| Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` | `S3_REGION=auto`; R2 API token's access key / secret | ✅ 2026-10-31, WNAM, both checksum modes |
 | MinIO | `http://host:9000` | | ✅ 2026-10-31, both checksum modes |
 
 "Conformance" means the whole integration suite passed against that store
