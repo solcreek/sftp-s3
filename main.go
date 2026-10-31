@@ -100,14 +100,25 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 	return cfg, nil
 }
 
-// parseUsers parses "alice:secret,bob:hunter2". Malformed entries and names
-// containing "/" or "." (they become S3 key prefixes) are skipped.
+// parseUsers parses "alice:secret,bob:hunter2". Any malformed entry is an
+// error rather than skipped, so a typo cannot silently lock a user out or
+// truncate a password containing a comma. Names may not contain "/" or "."
+// since they become S3 key prefixes.
 func parseUsers(s string) (map[string]string, error) {
 	m := map[string]string{}
 	for _, pair := range strings.Split(s, ",") {
-		u, p, ok := strings.Cut(strings.TrimSpace(pair), ":")
-		if !ok || u == "" || p == "" || strings.ContainsAny(u, "/.") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
 			continue
+		}
+		u, p, ok := strings.Cut(pair, ":")
+		switch {
+		case !ok || u == "" || p == "":
+			return nil, fmt.Errorf("SFTP_USERS: entry for %q is not user:password", u)
+		case strings.ContainsAny(u, "/."):
+			return nil, fmt.Errorf("SFTP_USERS: user %q may not contain '/' or '.'", u)
+		case m[u] != "":
+			return nil, fmt.Errorf("SFTP_USERS: user %q is listed twice", u)
 		}
 		m[u] = p
 	}
