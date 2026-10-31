@@ -71,6 +71,8 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 		Users:    map[string]string{"alice": "alice-pw", "bob": "bob-pw"},
 		HostKey:  signer,
 		PartSize: 5 << 20, // S3's minimum, so multi-part paths run on small files
+
+		AuthFailDelay: time.Millisecond, // keep auth tests fast; TestFailedLoginIsDelayed sets its own
 	}
 	for _, o := range opts {
 		o(&cfg)

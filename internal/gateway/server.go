@@ -11,6 +11,7 @@ import (
 	"net"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pkg/sftp"
@@ -27,6 +28,11 @@ type Config struct {
 	HostKey    ssh.Signer
 	PartSize   int64 // multipart part size; 0 means 8 MiB
 	MaxReorder int64 // out-of-order bytes buffered per upload; 0 means 64 MiB
+
+	// AuthFailDelay is how long a wrong password is held before the client
+	// may try again; 0 means 1 s. With ssh's 6 tries per connection it slows
+	// password guessing to a few attempts per second per connection.
+	AuthFailDelay time.Duration
 }
 
 // Server accepts SSH connections and serves the sftp subsystem.
@@ -54,13 +60,17 @@ func New(cfg Config) (*Server, error) {
 	if cfg.MaxReorder == 0 {
 		cfg.MaxReorder = 64 << 20
 	}
-	users := cfg.Users
+	if cfg.AuthFailDelay == 0 {
+		cfg.AuthFailDelay = time.Second
+	}
+	users, delay := cfg.Users, cfg.AuthFailDelay
 	sshCfg := &ssh.ServerConfig{
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
 			want, ok := users[c.User()]
 			if ok && subtle.ConstantTimeCompare([]byte(want), pass) == 1 {
 				return &ssh.Permissions{}, nil
 			}
+			time.Sleep(delay)
 			return nil, fmt.Errorf("auth failed for %q", c.User())
 		},
 	}

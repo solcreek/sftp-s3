@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pkg/sftp"
@@ -66,6 +67,30 @@ func TestAuthentication(t *testing.T) {
 		t.Fatalf("valid login failed: %v", err)
 	}
 	c.Close()
+}
+
+func TestFailedLoginIsDelayed(t *testing.T) {
+	const delay = 300 * time.Millisecond
+	e := newEnv(t, func(c *Config) { c.AuthFailDelay = delay })
+
+	start := time.Now()
+	if c, err := e.sshDial("alice", "wrong"); err == nil {
+		c.Close()
+		t.Fatal("wrong password accepted")
+	}
+	if took := time.Since(start); took < delay {
+		t.Fatalf("failed login answered after %v, want at least %v", took, delay)
+	}
+
+	start = time.Now()
+	c, err := e.sshDial("alice", "alice-pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
+	if took := time.Since(start); took >= delay {
+		t.Errorf("successful login took %v; only failures should be delayed", took)
+	}
 }
 
 func TestOnlyTheSFTPSubsystemIsServed(t *testing.T) {
