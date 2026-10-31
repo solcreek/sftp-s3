@@ -27,13 +27,40 @@ App Runner and Render have the same HTTP-only limit.
 ```sh
 export S3_BUCKET=my-bucket AWS_REGION=... SFTP_USERS='alice:secret,bob:other'
 export SFTP_HOST_KEY="$(cat host_ed25519)"   # pin it; otherwise a new key per start
-# optional: S3_ENDPOINT=http://127.0.0.1:9000 (MinIO/R2, path-style), S3_PREFIX=sftp/, PORT=2222
+# optional: S3_PREFIX=sftp/, PORT=2222, S3_PART_SIZE_MB=8 (10,000 parts: 80 GB max file)
+# for a compatible store: S3_ENDPOINT, S3_REGION, S3_PATH_STYLE, S3_CHECKSUM (below)
 ./sftp-s3   # go build -o sftp-s3 .
 ```
 
 Each user is chrooted to `s3://$S3_BUCKET/$S3_PREFIX<user>/`; `..` cannot escape.
 Supported: put, get, ls, stat, mkdir (zero-byte `dir/` marker), rmdir, rm, rename
 (copy+delete, ≤ 5 GB), setstat (accepted, ignored).
+
+## S3 and S3-compatible stores
+
+Credentials always come from the AWS SDK chain (`AWS_ACCESS_KEY_ID` /
+`AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE`, or an IAM role). Setting
+`S3_ENDPOINT` switches to defaults that compatible stores accept:
+
+| setting | AWS (no endpoint) | custom endpoint |
+|---|---|---|
+| `S3_REGION` | from `AWS_REGION` / profile (required) | `us-east-1` if unset |
+| `S3_PATH_STYLE` | `false` | `true` |
+| `S3_CHECKSUM` | `when_supported` (SDK default) | `when_required` |
+| `Accept-Encoding` in signature | signed | not signed (GCS rewrites it) |
+
+| store | `S3_ENDPOINT` | notes | conformance |
+|---|---|---|---|
+| AWS S3 | (unset) | | ✅ 2026-10-31, ap-northeast-1 |
+| Google Cloud Storage | `https://storage.googleapis.com` | HMAC key of a service account with `roles/storage.objectAdmin` | ✅ 2026-10-31, asia-northeast1 |
+| Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` | `S3_REGION=auto`; R2 API token's access key / secret | ⏳ pending credentials |
+| MinIO | `http://host:9000` | | ✅ 2026-10-31, both checksum modes |
+
+"Conformance" means the whole integration suite passed against that store
+(`make conformance`, see Testing). Two incompatibilities it caught, both
+fixed: the SDK signs `Accept-Encoding`, which GCS rewrites, and the SDK's
+multipart uploader adds per-part CRC32 checksums regardless of the client's
+checksum setting.
 
 ## Testing
 
@@ -45,7 +72,18 @@ make e2e BIG=/path/to/1g.bin   # OpenSSH sftp against MinIO/S3 (see scripts/e2e.
 
 The integration tests need nothing installed: each one starts a real gateway
 on a loopback port backed by an in-memory S3 (gofakes3) and drives it with
-the `pkg/sftp` client. `make e2e` covers what they cannot: the OpenSSH
+the `pkg/sftp` client. Pointed at a real bucket they become the conformance
+suite for that store; each test writes under `sftp-s3-conformance/` and
+cleans up after itself:
+
+```sh
+make conformance CONFORMANCE_BUCKET=my-bucket AWS_PROFILE=dev                  # AWS
+AWS_ACCESS_KEY_ID=GOOG1... AWS_SECRET_ACCESS_KEY=... \
+  make conformance CONFORMANCE_BUCKET=my-bucket CONFORMANCE_ENDPOINT=https://storage.googleapis.com
+AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... CONFORMANCE_REGION=auto \
+  make conformance CONFORMANCE_BUCKET=my-bucket CONFORMANCE_ENDPOINT=https://<acct>.r2.cloudflarestorage.com
+```
+ `make e2e` covers what they cannot: the OpenSSH
 client, a real S3 implementation, and throughput / memory.
 
 ## Why Go (decision record)
