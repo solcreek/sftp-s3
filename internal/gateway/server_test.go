@@ -9,7 +9,9 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -128,6 +130,7 @@ func TestHandshakeLogLevel(t *testing.T) {
 	}{
 		"closed before handshake (health check)": {io.EOF, slog.LevelDebug},
 		"wrapped EOF":                            {fmt.Errorf("ssh: %w", io.EOF), slog.LevelDebug},
+		"reset after our banner (Linux)":         {&net.OpError{Op: "read", Err: os.NewSyscallError("read", syscall.ECONNRESET)}, slog.LevelDebug},
 		"bad password":                           {errors.New("ssh: no auth passed yet"), slog.LevelInfo},
 	}
 	for name, tt := range tests {

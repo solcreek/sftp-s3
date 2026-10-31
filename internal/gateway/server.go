@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"sync"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pkg/sftp"
@@ -121,8 +122,10 @@ func (s *Server) handleConn(nc net.Conn) {
 // handshakeLogLevel keeps connections that close before saying anything
 // (load balancer TCP health checks, port scanners) out of the default log;
 // they arrive every few seconds behind an AWS NLB or GCP passthrough LB.
+// Such a peer shows up as EOF, or as a reset when it closes after our
+// version banner arrived unread (Linux).
 func handshakeLogLevel(err error) slog.Level {
-	if errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) || errors.Is(err, syscall.ECONNRESET) {
 		return slog.LevelDebug
 	}
 	return slog.LevelInfo
