@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/pkg/sftp"
 )
 
@@ -175,6 +176,9 @@ func (u *userFS) list(ctx context.Context, p string) (sftp.ListerAt, error) {
 
 // mapErr turns S3 "not found" errors into os.ErrNotExist, which pkg/sftp
 // reports to clients as SSH_FX_NO_SUCH_FILE.
+//
+// Only some operations model NoSuchKey as a typed error; CopyObject (rename)
+// returns it as a generic API error, so the error code is checked too.
 func mapErr(err error) error {
 	if err == nil {
 		return nil
@@ -182,6 +186,10 @@ func mapErr(err error) error {
 	var nsk *types.NoSuchKey
 	var nf *types.NotFound
 	if errors.As(err, &nsk) || errors.As(err, &nf) {
+		return os.ErrNotExist
+	}
+	var api smithy.APIError
+	if errors.As(err, &api) && (api.ErrorCode() == "NoSuchKey" || api.ErrorCode() == "NotFound") {
 		return os.ErrNotExist
 	}
 	return err
