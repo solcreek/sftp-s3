@@ -21,6 +21,7 @@ App Runner and Render have the same HTTP-only limit.
 | SFTPGo / `rclone serve sftp` | run a container | mature OSS with an S3 backend and web admin; the baseline to beat before writing your own |
 | this POC on Fly.io | `fly deploy` | raw TCP services, needs a dedicated IPv4 for :22 (`fly.toml`) |
 | this POC on ECS Fargate + NLB / GKE Autopilot / EKS | moderate | TCP load balancer in front of a container |
+| this POC on EC2 or ECS Fargate + NLB, Tokyo | low–moderate | measured 2026-10-31: [docs/deploy-aws.md](docs/deploy-aws.md) |
 
 ## Running
 
