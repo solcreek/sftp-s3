@@ -1,9 +1,13 @@
 package gateway
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
+	"fmt"
+	"io"
+	"log/slog"
 	"net"
 	"strings"
 	"testing"
@@ -115,6 +119,41 @@ func TestHandshakeFailureDoesNotStopTheServer(t *testing.T) {
 	raw.Close()
 
 	e.sftp("alice") // still accepting
+}
+
+func TestHandshakeLogLevel(t *testing.T) {
+	tests := map[string]struct {
+		err  error
+		want slog.Level
+	}{
+		"closed before handshake (health check)": {io.EOF, slog.LevelDebug},
+		"wrapped EOF":                            {fmt.Errorf("ssh: %w", io.EOF), slog.LevelDebug},
+		"bad password":                           {errors.New("ssh: no auth passed yet"), slog.LevelInfo},
+	}
+	for name, tt := range tests {
+		if got := handshakeLogLevel(tt.err); got != tt.want {
+			t.Errorf("%s: level %v, want %v", name, got, tt.want)
+		}
+	}
+}
+
+func TestHealthCheckConnectionsAreNotLogged(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	e := newEnv(t)
+	raw, err := net.Dial("tcp", e.addr) // what an NLB TCP health check does
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw.Close()
+	e.sftp("alice") // a later login proves the probe was handled
+
+	if strings.Contains(buf.String(), "handshake failed") {
+		t.Fatalf("health check logged at info:\n%s", buf.String())
+	}
 }
 
 func TestIsSFTP(t *testing.T) {

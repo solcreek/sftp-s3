@@ -2,6 +2,7 @@
 package gateway
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
 	"fmt"
@@ -90,7 +91,7 @@ func (s *Server) handleConn(nc net.Conn) {
 	defer nc.Close()
 	sc, chans, reqs, err := ssh.NewServerConn(nc, s.sshCfg)
 	if err != nil {
-		slog.Info("handshake failed", "remote", nc.RemoteAddr(), "err", err)
+		slog.Log(context.Background(), handshakeLogLevel(err), "handshake failed", "remote", nc.RemoteAddr(), "err", err)
 		return
 	}
 	defer sc.Close()
@@ -115,6 +116,16 @@ func (s *Server) handleConn(nc net.Conn) {
 			serveSession(ch, chReqs, fs)
 		}()
 	}
+}
+
+// handshakeLogLevel keeps connections that close before saying anything
+// (load balancer TCP health checks, port scanners) out of the default log;
+// they arrive every few seconds behind an AWS NLB or GCP passthrough LB.
+func handshakeLogLevel(err error) slog.Level {
+	if errors.Is(err, io.EOF) {
+		return slog.LevelDebug
+	}
+	return slog.LevelInfo
 }
 
 // serveSession answers channel requests; only the "sftp" subsystem is accepted.
