@@ -154,6 +154,14 @@ func (u *userFS) list(ctx context.Context, p string) (sftp.ListerAt, error) {
 		dk = u.root
 	}
 	var items listerAt
+	dirs := map[string]bool{}
+	addDir := func(key string) {
+		name := path.Base(strings.TrimSuffix(key, "/"))
+		if !dirs[name] {
+			dirs[name] = true
+			items = append(items, fileInfo{name: name, dir: true})
+		}
+	}
 	pg := s3.NewListObjectsV2Paginator(u.client, &s3.ListObjectsV2Input{
 		Bucket: &u.bucket, Prefix: &dk, Delimiter: aws.String("/")})
 	for pg.HasMorePages() {
@@ -162,13 +170,19 @@ func (u *userFS) list(ctx context.Context, p string) (sftp.ListerAt, error) {
 			return nil, mapErr(err)
 		}
 		for _, cp := range out.CommonPrefixes {
-			items = append(items, fileInfo{name: path.Base(strings.TrimSuffix(*cp.Prefix, "/")), dir: true})
+			addDir(*cp.Prefix)
 		}
 		for _, o := range out.Contents {
-			if *o.Key == dk {
-				continue // the directory marker itself
+			switch {
+			case *o.Key == dk:
+				// the listed directory's own marker
+			case strings.HasSuffix(*o.Key, "/"):
+				// A child's "dir/" marker. S3 and MinIO report it as a common
+				// prefix, but some S3-compatible stores return it as an object.
+				addDir(*o.Key)
+			default:
+				items = append(items, fileInfo{name: path.Base(*o.Key), size: aws.ToInt64(o.Size), mtime: aws.ToTime(o.LastModified)})
 			}
-			items = append(items, fileInfo{name: path.Base(*o.Key), size: aws.ToInt64(o.Size), mtime: aws.ToTime(o.LastModified)})
 		}
 	}
 	return items, nil
