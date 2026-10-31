@@ -42,7 +42,7 @@ the gateway. Prices are list prices from memory, not re-checked.
     `AbortIncompleteMultipartUpload` lifecycle rule.
 - **Health checks flooded the log.** The NLB's TCP health checks open and
   close a connection every few seconds per target. They are now logged at
-  debug level (commit f15bebf).
+  debug level (commits f15bebf, 9cf64c3).
 - **Port 22 on EC2** is free once the host `sshd` is disabled; SSM Session
   Manager replaces it for administration.
 
