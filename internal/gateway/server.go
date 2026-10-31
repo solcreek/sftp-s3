@@ -33,6 +33,11 @@ type Config struct {
 	// may try again; 0 means 1 s. With ssh's 6 tries per connection it slows
 	// password guessing to a few attempts per second per connection.
 	AuthFailDelay time.Duration
+
+	// LoginTimeout bounds the SSH handshake plus authentication; 0 means
+	// 30 s. Connections that never log in are closed instead of holding a
+	// slot forever.
+	LoginTimeout time.Duration
 }
 
 // Server accepts SSH connections and serves the sftp subsystem.
@@ -59,6 +64,9 @@ func New(cfg Config) (*Server, error) {
 	}
 	if cfg.MaxReorder == 0 {
 		cfg.MaxReorder = 64 << 20
+	}
+	if cfg.LoginTimeout == 0 {
+		cfg.LoginTimeout = 30 * time.Second
 	}
 	if cfg.AuthFailDelay == 0 {
 		cfg.AuthFailDelay = time.Second
@@ -100,11 +108,13 @@ func (s *Server) Serve(ln net.Listener) error {
 
 func (s *Server) handleConn(nc net.Conn) {
 	defer nc.Close()
+	nc.SetDeadline(time.Now().Add(s.cfg.LoginTimeout))
 	sc, chans, reqs, err := ssh.NewServerConn(nc, s.sshCfg)
 	if err != nil {
 		slog.Log(context.Background(), handshakeLogLevel(err), "handshake failed", "remote", nc.RemoteAddr(), "err", err)
 		return
 	}
+	nc.SetDeadline(time.Time{}) // logged in: sessions may idle and transfer as long as they like
 	defer sc.Close()
 	slog.Info("login", "user", sc.User(), "remote", nc.RemoteAddr())
 	go ssh.DiscardRequests(reqs)

@@ -93,6 +93,34 @@ func TestFailedLoginIsDelayed(t *testing.T) {
 	}
 }
 
+func TestSilentConnectionsAreClosedAfterLoginTimeout(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.LoginTimeout = 200 * time.Millisecond })
+	raw, err := net.Dial("tcp", e.addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	raw.SetReadDeadline(time.Now().Add(5 * time.Second)) // test guard only
+
+	start := time.Now()
+	_, err = io.Copy(io.Discard, raw) // read the banner, then wait for the close
+	if err != nil {
+		t.Fatalf("server did not close the silent connection: %v", err)
+	}
+	if took := time.Since(start); took < 200*time.Millisecond {
+		t.Fatalf("closed after %v, before the login timeout", took)
+	}
+}
+
+func TestLoggedInSessionsOutliveTheLoginTimeout(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.LoginTimeout = 200 * time.Millisecond })
+	c := e.sftp("alice")
+	time.Sleep(400 * time.Millisecond)
+	if _, err := c.ReadDir("/"); err != nil {
+		t.Fatalf("session closed by the login timeout: %v", err)
+	}
+}
+
 func TestOnlyTheSFTPSubsystemIsServed(t *testing.T) {
 	e := newEnv(t)
 	conn, err := e.sshDial("alice", "alice-pw")
