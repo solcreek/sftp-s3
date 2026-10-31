@@ -35,6 +35,19 @@ Each user is chrooted to `s3://$S3_BUCKET/$S3_PREFIX<user>/`; `..` cannot escape
 Supported: put, get, ls, stat, mkdir (zero-byte `dir/` marker), rmdir, rm, rename
 (copy+delete, ≤ 5 GB), setstat (accepted, ignored).
 
+## Testing
+
+```sh
+make test     # vet + race-enabled unit and integration tests
+make cover    # same, plus coverage.html; fails below 90%
+make e2e BIG=/path/to/1g.bin   # OpenSSH sftp against MinIO/S3 (see scripts/e2e.sh)
+```
+
+The integration tests need nothing installed: each one starts a real gateway
+on a loopback port backed by an in-memory S3 (gofakes3) and drives it with
+the `pkg/sftp` client. `make e2e` covers what they cannot: the OpenSSH
+client, a real S3 implementation, and throughput / memory.
+
 ## Why Go (decision record)
 
 A Rust POC (`russh` 0.65 + `russh-sftp` 3.0 + `aws-sdk-s3`) was built alongside
