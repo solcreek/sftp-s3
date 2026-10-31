@@ -14,7 +14,9 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -26,7 +28,11 @@ import (
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
-	if err := run(context.Background(), os.Getenv); err != nil {
+	// Deploys send SIGTERM: stop accepting, let in-flight uploads finish.
+	// The platform's kill timeout bounds how long that can take.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if err := run(ctx, os.Getenv); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
@@ -46,8 +52,13 @@ func run(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
-	slog.Info("listening", "addr", addr, "bucket", cfg.Bucket,
+	slog.Info("listening", "addr", ln.Addr().String(), "bucket", cfg.Bucket,
 		"fingerprint", ssh.FingerprintSHA256(cfg.HostKey.PublicKey()))
+	go func() {
+		<-ctx.Done()
+		slog.Info("shutting down; waiting for open sessions")
+		ln.Close()
+	}()
 	return srv.Serve(ln)
 }
 
