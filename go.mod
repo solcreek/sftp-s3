@@ -1,4 +1,4 @@
-module github.com/kaikhq/sftp-s3
+module github.com/solcreek/sftp-s3
 
 go 1.27.3
 

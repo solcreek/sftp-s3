@@ -23,7 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/kaikhq/sftp-s3/internal/gateway"
+	"github.com/solcreek/sftp-s3/internal/gateway"
 )
 
 func main() {
