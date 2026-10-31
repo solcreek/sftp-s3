@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -102,6 +103,25 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("S3_ENDPOINT not applied: endpoint %v, path style %v", opts.BaseEndpoint, opts.UsePathStyle)
 	}
 
+	if opts.RequestChecksumCalculation != aws.RequestChecksumCalculationWhenRequired {
+		t.Fatal("custom endpoint did not get compatible checksum mode")
+	}
+	if cfg.PartSize != 0 {
+		t.Fatalf("PartSize = %d, want 0 (gateway default)", cfg.PartSize)
+	}
+
+	cfg, err = loadConfig(context.Background(), envMap(map[string]string{
+		"S3_BUCKET": "b", "SFTP_USERS": "a:b", "S3_ENDPOINT": "https://x.example",
+		"S3_REGION": "auto", "S3_PATH_STYLE": "false", "S3_CHECKSUM": "when_supported", "S3_PART_SIZE_MB": "16",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o := cfg.Client.Options(); o.Region != "auto" || o.UsePathStyle ||
+		o.RequestChecksumCalculation != aws.RequestChecksumCalculationWhenSupported || cfg.PartSize != 16<<20 {
+		t.Fatalf("overrides not applied: region %q path %v checksum %v part %d", o.Region, o.UsePathStyle, o.RequestChecksumCalculation, cfg.PartSize)
+	}
+
 	// Without S3_ENDPOINT the client talks to AWS with virtual-hosted style.
 	cfg, err = loadConfig(context.Background(), envMap(map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b"}))
 	if err != nil {
@@ -122,6 +142,9 @@ func TestLoadConfigErrors(t *testing.T) {
 		{"no bucket", map[string]string{"SFTP_USERS": "a:b"}, "S3_BUCKET"},
 		{"no users", map[string]string{"S3_BUCKET": "b"}, "SFTP_USERS"},
 		{"bad host key", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "SFTP_HOST_KEY": "x"}, "SFTP_HOST_KEY"},
+		{"part size too small", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "S3_PART_SIZE_MB": "4"}, "S3_PART_SIZE_MB"},
+		{"part size not a number", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "S3_PART_SIZE_MB": "8M"}, "S3_PART_SIZE_MB"},
+		{"bad checksum mode", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "S3_CHECKSUM": "off"}, "S3_CHECKSUM"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

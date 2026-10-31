@@ -15,15 +15,14 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/solcreek/sftp-s3/internal/gateway"
+	"github.com/solcreek/sftp-s3/internal/s3client"
 )
 
 func main() {
@@ -70,8 +69,10 @@ func orDefault(v, def string) string {
 }
 
 // loadConfig builds the gateway config from environment variables:
-// S3_BUCKET, SFTP_USERS, and optionally S3_PREFIX, S3_ENDPOINT, SFTP_HOST_KEY.
-// AWS credentials and region come from the SDK's default chain.
+// S3_BUCKET, SFTP_USERS, and optionally S3_PREFIX, SFTP_HOST_KEY,
+// S3_PART_SIZE_MB, and the store settings S3_ENDPOINT, S3_REGION,
+// S3_PATH_STYLE, S3_CHECKSUM (see internal/s3client). Credentials come from
+// the AWS SDK's default chain (AWS_ACCESS_KEY_ID/..., profiles, IAM roles).
 func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config, error) {
 	var cfg gateway.Config
 	cfg.Bucket = getenv("S3_BUCKET")
@@ -86,17 +87,25 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 	if cfg.HostKey, err = hostKey(getenv("SFTP_HOST_KEY")); err != nil {
 		return cfg, err
 	}
-	awsCfg, err := config.LoadDefaultConfig(ctx)
+	if mb := getenv("S3_PART_SIZE_MB"); mb != "" {
+		n, err := strconv.Atoi(mb)
+		if err != nil || n < 5 || n > 5120 {
+			return cfg, fmt.Errorf("S3_PART_SIZE_MB: %q must be an integer from 5 to 5120", mb)
+		}
+		cfg.PartSize = int64(n) << 20
+	}
+	client, st, err := s3client.New(ctx, s3client.Options{
+		Endpoint:  getenv("S3_ENDPOINT"),
+		Region:    getenv("S3_REGION"),
+		PathStyle: getenv("S3_PATH_STYLE"),
+		Checksum:  getenv("S3_CHECKSUM"),
+	})
 	if err != nil {
 		return cfg, err
 	}
-	endpoint := getenv("S3_ENDPOINT")
-	cfg.Client = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		if endpoint != "" { // MinIO / R2 / etc.
-			o.BaseEndpoint = aws.String(endpoint)
-			o.UsePathStyle = true
-		}
-	})
+	cfg.Client = client
+	slog.Info("s3", "endpoint", orDefault(st.Endpoint, "aws"), "region", st.Region,
+		"path_style", st.PathStyle, "checksum", st.Checksum)
 	return cfg, nil
 }
 
