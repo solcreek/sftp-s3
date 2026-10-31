@@ -6,6 +6,7 @@
 //
 //   - Path-style addressing (bucket in the path, not the hostname), since
 //     many stores and local deployments have no wildcard DNS/TLS.
+//   - Accept-Encoding left out of the request signature (GCS rewrites it).
 //   - Checksums only when an operation requires them. Since early 2025 the
 //     AWS SDKs add CRC32 checksums (with aws-chunked trailers on streaming
 //     uploads) to every request by default; several compatible stores reject
@@ -95,6 +96,7 @@ func New(ctx context.Context, o Options) (*s3.Client, Settings, error) {
 		so.ResponseChecksumValidation = respSum
 		if custom {
 			so.BaseEndpoint = aws.String(o.Endpoint)
+			so.APIOptions = append(so.APIOptions, unsignedHeaders("Accept-Encoding"))
 		}
 	})
 	return client, s, nil
