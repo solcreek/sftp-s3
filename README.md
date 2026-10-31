@@ -28,7 +28,7 @@ App Runner and Render have the same HTTP-only limit.
 export S3_BUCKET=my-bucket AWS_REGION=... SFTP_USERS='alice:secret,bob:other'
 export SFTP_HOST_KEY="$(cat host_ed25519)"   # pin it; otherwise a new key per start
 # optional: S3_ENDPOINT=http://127.0.0.1:9000 (MinIO/R2, path-style), S3_PREFIX=sftp/, PORT=2222
-go/sftp-s3-go
+./sftp-s3   # go build -o sftp-s3 .
 ```
 
 Each user is chrooted to `s3://$S3_BUCKET/$S3_PREFIX<user>/`; `..` cannot escape.

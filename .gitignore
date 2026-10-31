@@ -1,2 +1,2 @@
-go/sftp-s3-go
-rust/target/
+/sftp-s3
+/coverage.*

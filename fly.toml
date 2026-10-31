@@ -1,5 +1,5 @@
 # Fly.io: one of the few "push a container" platforms that accepts raw TCP.
-# Deploy either POC:  fly launch --no-deploy --dockerfile go/Dockerfile   (or rust/Dockerfile)
+# Deploy:  fly launch --no-deploy
 #   fly secrets set S3_BUCKET=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=... \
 #                   SFTP_USERS='alice:...' SFTP_HOST_KEY="$(cat host_ed25519)"
 #   fly ips allocate-v4      # dedicated IPv4: raw TCP on port 22 needs one
@@ -7,7 +7,7 @@ app = "sftp-s3-poc"
 primary_region = "nrt"
 
 [build]
-  dockerfile = "go/Dockerfile"
+  dockerfile = "Dockerfile"
 
 [[services]]
   internal_port = 2222
