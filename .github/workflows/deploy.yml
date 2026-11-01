@@ -1,0 +1,94 @@
+# Build the image with ko and roll it out to the stack in deploy/aws.
+# Repository variables come from `tofu output deploy_variables` plus
+# AWS_DEPLOY_ROLE_ARN from `tofu output github_deploy_role_arn`.
+name: deploy
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write # OIDC to AWS
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go install github.com/google/ko@v0.18.0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        id: build
+        env:
+          KO_DOCKER_REPO: ${{ vars.ECR_REPOSITORY }}
+          KO_DEFAULTBASEIMAGE: gcr.io/distroless/static-debian12:nonroot
+        run: |
+          image=$(ko build --bare --platform=linux/arm64 --tags="$GITHUB_SHA" .)
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+          echo "built $image" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Roll out on ECS
+        if: vars.DEPLOY_COMPUTE == 'ecs'
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          CLUSTER: ${{ vars.ECS_CLUSTER }}
+          SERVICE: ${{ vars.ECS_SERVICE }}
+          FAMILY: ${{ vars.ECS_FAMILY }}
+        run: |
+          # Copy the newest revision (it carries any settings `tofu apply`
+          # changed) and swap in the new image.
+          aws ecs describe-task-definition --task-definition "$FAMILY" --query taskDefinition |
+            jq --arg img "$IMAGE" '.containerDefinitions[0].image = $img
+              | {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions,
+                 volumes, requiresCompatibilities, cpu, memory, runtimePlatform}
+              | with_entries(select(.value != null))' > taskdef.json
+          arn=$(aws ecs register-task-definition --cli-input-json file://taskdef.json \
+            --query taskDefinition.taskDefinitionArn --output text)
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --task-definition "$arn" >/dev/null
+          echo "rolling out $arn"
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          # A failed rollout is rolled back by the circuit breaker, and the
+          # service still turns stable, so check what is actually running.
+          read -r state running < <(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`]|[0].[rolloutState,taskDefinition]' --output text)
+          echo "$state $running"
+          [ "$state" = COMPLETED ] && [ "$running" = "$arn" ]
+          echo "ECS running $arn" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restart on EC2
+        if: vars.DEPLOY_COMPUTE == 'ec2'
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          INSTANCE: ${{ vars.EC2_INSTANCE_ID }}
+          PARAM: ${{ vars.IMAGE_PARAMETER }}
+        run: |
+          aws ssm put-parameter --name "$PARAM" --value "$IMAGE" --overwrite >/dev/null
+          run() { # a restart can take 120 s while open sessions finish
+            id=$(aws ssm send-command --instance-ids "$INSTANCE" --document-name AWS-RunShellScript \
+              --parameters "$(jq -nc --arg c "$1" '{commands: [$c], executionTimeout: ["600"]}')" \
+              --query Command.CommandId --output text)
+            for _ in $(seq 120); do
+              sleep 5
+              s=$(aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCE" \
+                --query Status --output text 2>/dev/null) || continue
+              case $s in Pending|InProgress|Delayed) ;; *) break ;; esac
+            done
+            aws ssm get-command-invocation --command-id "$id" --instance-id "$INSTANCE" \
+              --query '[Status,StandardOutputContent,StandardErrorContent]' --output text
+          }
+          run "systemctl restart sftp-s3"
+          out=$(run "sleep 10; systemctl is-active sftp-s3; docker inspect -f '{{.Config.Image}}' sftp-s3")
+          echo "$out"
+          grep -q "^Success" <<<"$out" && grep -qF "$IMAGE" <<<"$out"
+          echo "EC2 running $IMAGE" >> "$GITHUB_STEP_SUMMARY"
