@@ -33,3 +33,38 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Check what was published, as a user would: signatures, and the image
+  # running on both architectures.
+  verify:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      IDENTITY: ^https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/
+      ISSUER: https://token.actions.githubusercontent.com
+    steps:
+      - uses: sigstore/cosign-installer@v3
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checksums signature
+        run: |
+          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -p 'checksums.txt*'
+          cosign verify-blob --bundle checksums.txt.sigstore.json \
+            --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER" checksums.txt
+      - name: Image signature and both architectures
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY}:${GITHUB_REF_NAME#v}"
+          cosign verify --certificate-identity-regexp "$IDENTITY" --certificate-oidc-issuer "$ISSUER" "$image" >/dev/null
+          for platform in linux/amd64 linux/arm64; do
+            out=$(docker run --rm --platform "$platform" "$image" -version)
+            echo "$platform: $out"
+            [ "$out" = "sftp-s3 ${GITHUB_REF_NAME#v}" ]
+          done
