@@ -128,6 +128,7 @@ func TestProxyProtocolOffCannotSpoofTheClient(t *testing.T) {
 	}
 	if c, err := e.dialWithHeader(proxyHeader(t, 2, "203.0.113.8:4343")); err == nil {
 		c.Close()
+		t.Error("a binary v2 header did not break the handshake")
 	}
 	e.sftp("alice") // a final login, so both attempts above were logged
 	if strings.Contains(logs.String(), "203.0.113.") {
