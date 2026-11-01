@@ -38,6 +38,11 @@ type Config struct {
 	// 30 s. Connections that never log in are closed instead of holding a
 	// slot forever.
 	LoginTimeout time.Duration
+
+	// MaxConns caps concurrent connections, logged in or not; 0 means 32.
+	// Further connections are closed at once. Size it to memory: a large
+	// upload holds roughly 120 MiB (parts in flight plus the reorder buffer).
+	MaxConns int
 }
 
 // Server accepts SSH connections and serves the sftp subsystem.
@@ -45,6 +50,7 @@ type Server struct {
 	cfg    Config
 	sshCfg *ssh.ServerConfig
 	wg     sync.WaitGroup
+	slots  chan struct{} // one per open connection
 }
 
 // New validates cfg and builds a Server.
@@ -65,6 +71,12 @@ func New(cfg Config) (*Server, error) {
 	if cfg.MaxReorder == 0 {
 		cfg.MaxReorder = 64 << 20
 	}
+	if cfg.MaxConns == 0 {
+		cfg.MaxConns = 32
+	}
+	if cfg.MaxConns < 0 {
+		return nil, errors.New("gateway: MaxConns must not be negative")
+	}
 	if cfg.LoginTimeout == 0 {
 		cfg.LoginTimeout = 30 * time.Second
 	}
@@ -83,7 +95,7 @@ func New(cfg Config) (*Server, error) {
 		},
 	}
 	sshCfg.AddHostKey(cfg.HostKey)
-	return &Server{cfg: cfg, sshCfg: sshCfg}, nil
+	return &Server{cfg: cfg, sshCfg: sshCfg, slots: make(chan struct{}, cfg.MaxConns)}, nil
 }
 
 // Serve accepts connections until ln is closed, then waits for open
@@ -98,9 +110,17 @@ func (s *Server) Serve(ln net.Listener) error {
 			}
 			return err
 		}
+		select {
+		case s.slots <- struct{}{}:
+		default:
+			slog.Warn("connection limit reached", "remote", conn.RemoteAddr(), "max", s.cfg.MaxConns)
+			conn.Close()
+			continue
+		}
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
+			defer func() { <-s.slots }()
 			s.handleConn(conn)
 		}()
 	}

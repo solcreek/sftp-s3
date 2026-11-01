@@ -30,6 +30,7 @@ func TestNewValidatesConfig(t *testing.T) {
 		"client":   func(c *Config) { c.Client = nil },
 		"bucket":   func(c *Config) { c.Bucket = "" },
 		"user":     func(c *Config) { c.Users = nil },
+		"MaxConns": func(c *Config) { c.MaxConns = -1 },
 		"host key": func(c *Config) { c.HostKey = nil },
 	}
 	for missing, mutate := range tests {
@@ -118,6 +119,37 @@ func TestLoggedInSessionsOutliveTheLoginTimeout(t *testing.T) {
 	time.Sleep(400 * time.Millisecond)
 	if _, err := c.ReadDir("/"); err != nil {
 		t.Fatalf("session closed by the login timeout: %v", err)
+	}
+}
+
+func TestConnectionLimit(t *testing.T) {
+	e := newEnv(t, func(c *Config) { c.MaxConns = 2 })
+	var open []*ssh.Client
+	for range 2 {
+		c, err := e.sshDial("alice", "alice-pw")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		open = append(open, c)
+	}
+	if c, err := e.sshDial("alice", "alice-pw"); err == nil {
+		c.Close()
+		t.Fatal("third connection accepted with MaxConns = 2")
+	}
+
+	open[0].Close() // frees a slot once the server notices
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c, err := e.sshDial("alice", "alice-pw")
+		if err == nil {
+			c.Close()
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("slot not released after a connection closed: %v", err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

@@ -113,12 +113,13 @@ func TestLoadConfig(t *testing.T) {
 	cfg, err = loadConfig(context.Background(), envMap(map[string]string{
 		"S3_BUCKET": "b", "SFTP_USERS": "a:b", "S3_ENDPOINT": "https://x.example",
 		"S3_REGION": "auto", "S3_PATH_STYLE": "false", "S3_CHECKSUM": "when_supported", "S3_PART_SIZE_MB": "16",
+		"SFTP_MAX_CONNECTIONS": "4",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if o := cfg.Client.Options(); o.Region != "auto" || o.UsePathStyle ||
-		o.RequestChecksumCalculation != aws.RequestChecksumCalculationWhenSupported || cfg.PartSize != 16<<20 {
+		o.RequestChecksumCalculation != aws.RequestChecksumCalculationWhenSupported || cfg.PartSize != 16<<20 || cfg.MaxConns != 4 {
 		t.Fatalf("overrides not applied: region %q path %v checksum %v part %d", o.Region, o.UsePathStyle, o.RequestChecksumCalculation, cfg.PartSize)
 	}
 
@@ -144,6 +145,8 @@ func TestLoadConfigErrors(t *testing.T) {
 		{"bad host key", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "SFTP_HOST_KEY": "x"}, "SFTP_HOST_KEY"},
 		{"part size too small", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "S3_PART_SIZE_MB": "4"}, "S3_PART_SIZE_MB"},
 		{"part size not a number", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "S3_PART_SIZE_MB": "8M"}, "S3_PART_SIZE_MB"},
+		{"zero connections", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "SFTP_MAX_CONNECTIONS": "0"}, "SFTP_MAX_CONNECTIONS"},
+		{"connections not a number", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "SFTP_MAX_CONNECTIONS": "many"}, "SFTP_MAX_CONNECTIONS"},
 		{"bad checksum mode", map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "S3_CHECKSUM": "off"}, "S3_CHECKSUM"},
 	}
 	for _, tt := range tests {

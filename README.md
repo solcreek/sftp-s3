@@ -29,6 +29,7 @@ App Runner and Render have the same HTTP-only limit.
 export S3_BUCKET=my-bucket AWS_REGION=... SFTP_USERS='alice:secret,bob:other'
 export SFTP_HOST_KEY="$(cat host_ed25519)"   # pin it; otherwise a new key per start
 # optional: S3_PREFIX=sftp/, PORT=2222, S3_PART_SIZE_MB=8 (10,000 parts: 80 GB max file)
+#           SFTP_MAX_CONNECTIONS=32 (about 120 MiB of memory per concurrent large upload)
 # for a compatible store: S3_ENDPOINT, S3_REGION, S3_PATH_STYLE, S3_CHECKSUM (below)
 ./sftp-s3   # go build -o sftp-s3 .
 ```
@@ -124,5 +125,8 @@ time.
   copy+delete, which doubles the write for big files. Consider disabling
   temp-file upload client-side, or use multipart copy for > 5 GB.
 - **Host key** must be pinned across deploys (`SFTP_HOST_KEY`).
-- **Not done (POC):** public-key auth, users from a DB/IdP, rate limits,
+- **Port 22 is public.** A wrong password is answered after 1 s, a connection
+  must log in within 30 s, and connections are capped (`SFTP_MAX_CONNECTIONS`,
+  excess ones are closed at once). Restrict source IPs where you can.
+- **Not done (POC):** public-key auth, users from a DB/IdP, per-IP limits,
   metrics, resume (`reput`), > 5 GB rename, `statvfs`.
