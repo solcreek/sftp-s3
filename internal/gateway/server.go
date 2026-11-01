@@ -42,6 +42,13 @@ type Config struct {
 	// Further connections are closed at once. Size it to memory: a large
 	// upload holds roughly 120 MiB (parts in flight plus the reorder buffer).
 	MaxConns int
+
+	// ProxyProtocol requires every connection to start with a PROXY
+	// protocol header (v1 or v2), as sent by load balancers configured for
+	// it, and logs the client address it carries. Connections without one
+	// are closed. The listener must then be reachable only through the
+	// proxy, or clients could claim any address.
+	ProxyProtocol bool
 }
 
 // limitWarnEvery throttles the "connection limit reached" log.
@@ -138,6 +145,14 @@ func (s *Server) Serve(ln net.Listener) error {
 func (s *Server) handleConn(nc net.Conn) {
 	defer nc.Close()
 	nc.SetDeadline(time.Now().Add(s.cfg.LoginTimeout))
+	if s.cfg.ProxyProtocol {
+		pc, err := readProxyHeader(nc)
+		if err != nil {
+			slog.Log(context.Background(), handshakeLogLevel(err), "no valid PROXY protocol header", "remote", nc.RemoteAddr(), "err", err)
+			return
+		}
+		nc = pc
+	}
 	sc, chans, reqs, err := ssh.NewServerConn(nc, s.sshCfg)
 	if err != nil {
 		slog.Log(context.Background(), handshakeLogLevel(err), "handshake failed", "remote", nc.RemoteAddr(), "err", err)

@@ -208,7 +208,7 @@ func orDefault(v, def string) string {
 // (SFTP_USERS and SFTP_HOST_KEY may instead be read from a file named by
 // SFTP_USERS_FILE / SFTP_HOST_KEY_FILE, the Docker and Kubernetes secrets
 // convention),
-// S3_PART_SIZE_MB, SFTP_MAX_CONNECTIONS, and the store settings S3_ENDPOINT, S3_REGION,
+// S3_PART_SIZE_MB, SFTP_MAX_CONNECTIONS, SFTP_PROXY_PROTOCOL, and the store settings S3_ENDPOINT, S3_REGION,
 // S3_PATH_STYLE, S3_CHECKSUM (see internal/s3client). Credentials come from
 // the AWS SDK's default chain (AWS_ACCESS_KEY_ID/..., profiles, IAM roles).
 func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config, error) {
@@ -249,6 +249,13 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 			return cfg, fmt.Errorf("SFTP_MAX_CONNECTIONS: %q must be an integer from 1 to 10000", v)
 		}
 		cfg.MaxConns = n
+	}
+	switch v := getenv("SFTP_PROXY_PROTOCOL"); v {
+	case "", "off":
+	case "on":
+		cfg.ProxyProtocol = true
+	default:
+		return cfg, fmt.Errorf("SFTP_PROXY_PROTOCOL: %q is not on or off", v)
 	}
 	client, st, err := s3client.New(ctx, s3client.Options{
 		Endpoint:  getenv("S3_ENDPOINT"),

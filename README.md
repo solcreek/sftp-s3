@@ -45,6 +45,7 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 | `S3_PREFIX` | `""` | key prefix in front of every user's directory, e.g. `sftp/` |
 | `S3_PART_SIZE_MB` | `8` | multipart part size, 5–5120. S3 allows 10,000 parts, so 8 MiB caps a file at about 80 GB |
 | `SFTP_MAX_CONNECTIONS` | `32` | concurrent connections; budget about 120 MiB of memory per concurrent large upload |
+| `SFTP_PROXY_PROTOCOL` | `off` | `on`: every connection must start with a PROXY protocol header (v1 or v2) from a load balancer, and logs show the client address it carries. Make the port reachable only through that load balancer |
 | `S3_ENDPOINT` | AWS | URL of an S3-compatible store; see below |
 | `S3_REGION` | `AWS_REGION` | region to sign for |
 | `S3_PATH_STYLE` | see below | `true` or `false` |

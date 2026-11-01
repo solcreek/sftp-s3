@@ -55,6 +55,11 @@ result of a real failure:
   at once; the warning is logged at most every 10 s.
 - Connections that close before the handshake (load balancer health checks)
   are logged at debug level.
+- With `SFTP_PROXY_PROTOCOL=on`, the PROXY header is read within the same
+  login timeout, before any SSH byte, from a buffer that then feeds the SSH
+  layer. Without the option a client cannot spoof its address: SSH skips
+  text lines before its version line, so a stray v1 header is ignored, and
+  a v2 header breaks the handshake.
 - Accepted connections use Go's default TCP keepalive (15 s), which also
   keeps idle sessions alive through load balancers with idle timeouts
   (verified against an AWS NLB with a 60 s timeout).

@@ -19,6 +19,8 @@ First public release candidate.
   `-hash-password` makes bcrypt hashes; `-version`.
 - Hardening: a delay after wrong passwords, a login timeout, and a
   connection cap (`SFTP_MAX_CONNECTIONS`).
+- `SFTP_PROXY_PROTOCOL=on` reads PROXY protocol v1/v2 headers, so logs
+  show client addresses behind Fly.io and other TCP proxies.
 - Graceful shutdown on SIGTERM.
 - Deployment: an OpenTofu / Terraform module for AWS (ECS Fargate + NLB, or
   EC2), a Kubernetes kustomization, and a Docker Compose example.
