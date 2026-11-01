@@ -92,6 +92,16 @@ Setting `S3_ENDPOINT` switches to defaults that compatible stores accept:
 Another store can be checked with `make conformance` (see
 [CONTRIBUTING.md](CONTRIBUTING.md)).
 
+### Command line
+
+Configuration is environment-only; the flags are tools:
+
+| flag | |
+|---|---|
+| `-check` | load the configuration as the server would, reach the bucket, print a summary, exit non-zero on any problem |
+| `-hash-password` | read a password (prompt, or a line on stdin) and print its bcrypt hash |
+| `-version` | print the version |
+
 ## Supported operations
 
 put, get (with random-access reads), ls, stat, mkdir, rmdir (empty

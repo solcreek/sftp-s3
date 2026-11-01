@@ -8,12 +8,15 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/johannesboyne/gofakes3"
+	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
 )
@@ -245,11 +248,13 @@ func TestRun(t *testing.T) {
 func TestParseFlags(t *testing.T) {
 	tests := []struct {
 		args     []string
+		check    bool
 		code     int
 		done     bool
 		out, err string
 	}{
 		{args: nil, code: 0, done: false},
+		{args: []string{"-check"}, check: true, code: 0, done: false},
 		{args: []string{"-version"}, code: 0, done: true, out: "sftp-s3 dev\n"},
 		{args: []string{"--version"}, code: 0, done: true, out: "sftp-s3 dev\n"},
 		{args: []string{"-h"}, code: 0, done: true, err: "environment variables"},
@@ -258,8 +263,8 @@ func TestParseFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		var out, errOut strings.Builder
-		code, done := parseFlags(tt.args, strings.NewReader(""), &out, &errOut)
-		if code != tt.code || done != tt.done || out.String() != tt.out || !strings.Contains(errOut.String(), tt.err) {
+		check, code, done := parseFlags(tt.args, strings.NewReader(""), &out, &errOut)
+		if check != tt.check || code != tt.code || done != tt.done || out.String() != tt.out || !strings.Contains(errOut.String(), tt.err) {
 			t.Errorf("parseFlags(%q) = %d, %v, stdout %q, stderr %q", tt.args, code, done, out.String(), errOut.String())
 		}
 	}
@@ -267,7 +272,7 @@ func TestParseFlags(t *testing.T) {
 
 func TestHashPassword(t *testing.T) {
 	var out, errOut strings.Builder
-	code, done := parseFlags([]string{"-hash-password"}, strings.NewReader("correct horse\n"), &out, &errOut)
+	_, code, done := parseFlags([]string{"-hash-password"}, strings.NewReader("correct horse\n"), &out, &errOut)
 	if code != 0 || !done {
 		t.Fatalf("exit %d, done %v, stderr %q", code, done, errOut.String())
 	}
@@ -282,8 +287,49 @@ func TestHashPassword(t *testing.T) {
 
 	out.Reset()
 	errOut.Reset()
-	if code, _ := parseFlags([]string{"-hash-password"}, strings.NewReader("\n"), &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "empty password") {
+	if _, code, _ := parseFlags([]string{"-hash-password"}, strings.NewReader("\n"), &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "empty password") {
 		t.Fatalf("empty input: exit %d, stderr %q", code, errOut.String())
+	}
+}
+
+func TestRunCheck(t *testing.T) {
+	isolateAWS(t)
+	backend := s3mem.New()
+	if err := backend.CreateBucket("uploads"); err != nil {
+		t.Fatal(err)
+	}
+	store := httptest.NewServer(gofakes3.New(backend).Server())
+	t.Cleanup(store.Close)
+	keyPEM, _ := testKeyPEM(t)
+	authKey, _ := authorizedKey(t, "")
+	env := map[string]string{
+		"S3_BUCKET":     "uploads",
+		"S3_ENDPOINT":   store.URL,
+		"SFTP_USERS":    "alice:" + authKey + ",bob:pw",
+		"SFTP_HOST_KEY": keyPEM,
+	}
+
+	var out strings.Builder
+	if err := runCheck(context.Background(), envMap(env), &out); err != nil {
+		t.Fatalf("check failed: %v\n%s", err, out.String())
+	}
+	for _, want := range []string{"users: 2 (1 keys, 0 hashed passwords, 1 plaintext passwords)", "host key: SHA256:", "bucket: uploads reachable", "ok"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+
+	env["S3_BUCKET"] = "missing"
+	if err := runCheck(context.Background(), envMap(env), io.Discard); err == nil || !strings.Contains(err.Error(), `bucket "missing"`) {
+		t.Errorf("missing bucket: err = %v", err)
+	}
+	env["S3_BUCKET"], env["SFTP_USERS"] = "uploads", "carol:$2a$not-a-hash"
+	if err := runCheck(context.Background(), envMap(env), io.Discard); err == nil || !strings.Contains(err.Error(), "password hash") {
+		t.Errorf("bad hash: err = %v", err)
+	}
+	delete(env, "SFTP_USERS")
+	if err := runCheck(context.Background(), envMap(env), io.Discard); err == nil || !strings.Contains(err.Error(), "SFTP_USERS") {
+		t.Errorf("no users: err = %v", err)
 	}
 }
 

@@ -21,7 +21,9 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
@@ -34,10 +36,20 @@ import (
 var version = "dev"
 
 func main() {
-	if code, done := parseFlags(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); done {
+	check, code, done := parseFlags(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
+	if done {
 		os.Exit(code)
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	if check {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := runCheck(ctx, os.Getenv, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "check failed:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	// Deploys send SIGTERM: stop accepting, let in-flight uploads finish.
 	// The platform's kill timeout bounds how long that can take.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -49,41 +61,43 @@ func main() {
 }
 
 // parseFlags handles the command line. Configuration itself is environment
-// variables only; done reports that the process should exit with code.
-func parseFlags(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int, done bool) {
+// variables only; done reports that the process should exit with code, and
+// check that it should validate the configuration instead of serving.
+func parseFlags(args []string, stdin io.Reader, stdout, stderr io.Writer) (check bool, code int, done bool) {
 	fs := flag.NewFlagSet("sftp-s3", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: sftp-s3 [-version | -hash-password]\n\nAn SFTP server backed by S3, configured through environment variables:\nhttps://github.com/solcreek/sftp-s3#configuration\n\n")
+		fmt.Fprintf(stderr, "Usage: sftp-s3 [-check | -version | -hash-password]\n\nAn SFTP server backed by S3, configured through environment variables:\nhttps://github.com/solcreek/sftp-s3#configuration\n\n")
 		fs.PrintDefaults()
 	}
 	showVersion := fs.Bool("version", false, "print the version and exit")
+	checkOnly := fs.Bool("check", false, "validate the configuration and reach the bucket, then exit")
 	hashPassword := fs.Bool("hash-password", false, "read a password from stdin, print its bcrypt hash for SFTP_USERS, and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			return 0, true
+			return false, 0, true
 		}
-		return 2, true
+		return false, 2, true
 	}
 	if fs.NArg() > 0 {
 		fmt.Fprintf(stderr, "unexpected argument %q\n", fs.Arg(0))
 		fs.Usage()
-		return 2, true
+		return false, 2, true
 	}
 	if *showVersion {
 		fmt.Fprintln(stdout, "sftp-s3", version)
-		return 0, true
+		return false, 0, true
 	}
 	if *hashPassword {
 		hash, err := hashFromInput(stdin, stderr)
 		if err != nil {
 			fmt.Fprintln(stderr, "sftp-s3:", err)
-			return 1, true
+			return false, 1, true
 		}
 		fmt.Fprintln(stdout, hash)
-		return 0, true
+		return false, 0, true
 	}
-	return 0, false
+	return *checkOnly, 0, false
 }
 
 // hashFromInput reads one password, without echo when stdin is a terminal,
@@ -110,6 +124,35 @@ func hashFromInput(stdin io.Reader, stderr io.Writer) (string, error) {
 	}
 	hash, err := bcrypt.GenerateFromPassword(pass, bcrypt.DefaultCost)
 	return string(hash), err
+}
+
+// runCheck loads the configuration as the server would, then checks that
+// the bucket is reachable with the credentials found.
+func runCheck(ctx context.Context, getenv func(string) string, out io.Writer) error {
+	cfg, err := loadConfig(ctx, getenv)
+	if err != nil {
+		return err
+	}
+	if _, err := gateway.New(cfg); err != nil {
+		return err
+	}
+	var keys, hashed, plain int
+	for _, u := range cfg.Users {
+		keys += len(u.Keys)
+		if u.PasswordHash != "" {
+			hashed++
+		}
+		if u.Password != "" {
+			plain++
+		}
+	}
+	fmt.Fprintf(out, "users: %d (%d keys, %d hashed passwords, %d plaintext passwords)\n", len(cfg.Users), keys, hashed, plain)
+	fmt.Fprintf(out, "host key: %s\n", ssh.FingerprintSHA256(cfg.HostKey.PublicKey()))
+	if _, err := cfg.Client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &cfg.Bucket}); err != nil {
+		return fmt.Errorf("bucket %q: %w", cfg.Bucket, err)
+	}
+	fmt.Fprintf(out, "bucket: %s reachable\nok\n", cfg.Bucket)
+	return nil
 }
 
 func run(ctx context.Context, getenv func(string) string) error {
