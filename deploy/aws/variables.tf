@@ -137,6 +137,16 @@ variable "github_repository" {
   default     = null
 }
 
+variable "github_sub_prefix" {
+  description = <<-EOT
+    Prefix of the OIDC token's `sub` claim; null means "repo:<github_repository>".
+    Repositories with immutable subjects use "repo:owner@<id>/repo@<id>"; read it
+    with `gh api repos/OWNER/REPO/actions/oidc/customization/sub` (sub_claim_prefix).
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "github_oidc_provider_exists" {
   description = "The account already has the token.actions.githubusercontent.com OIDC provider (only one may exist)."
   type        = bool

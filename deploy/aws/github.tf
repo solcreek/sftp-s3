@@ -32,7 +32,7 @@ data "aws_iam_policy_document" "github_trust" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${coalesce(var.github_repository, "-")}:ref:refs/heads/main"]
+      values   = ["${coalesce(var.github_sub_prefix, "repo:${coalesce(var.github_repository, "-")}")}:ref:refs/heads/main"]
     }
   }
 }

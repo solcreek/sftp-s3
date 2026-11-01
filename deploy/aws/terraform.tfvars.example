@@ -6,3 +6,4 @@ create_bucket = true # false: use an existing bucket, see README.md
 image_tag     = "abc1234"
 # s3_prefix         = "sftp/"
 # github_repository = "solcreek/sftp-s3"
+# github_sub_prefix = "repo:solcreek@234071385/sftp-s3@1441209972" # immutable OIDC subjects
