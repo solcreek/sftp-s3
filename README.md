@@ -36,6 +36,7 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 | `S3_BUCKET` | required | bucket to serve |
 | `SFTP_USERS` | required | users and their credentials, see [Users](#users) |
 | `SFTP_HOST_KEY` | random per start | PEM private key (OpenSSH format, e.g. from `ssh-keygen`); set it in production |
+| `SFTP_USERS_FILE`, `SFTP_HOST_KEY_FILE` | | read the value from a file instead (Docker / Kubernetes secrets); set one form, not both |
 | `PORT` | `2222` | listen port |
 | `S3_PREFIX` | `""` | key prefix in front of every user's directory, e.g. `sftp/` |
 | `S3_PART_SIZE_MB` | `8` | multipart part size, 5–5120. S3 allows 10,000 parts, so 8 MiB caps a file at about 80 GB |

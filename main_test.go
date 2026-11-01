@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -130,6 +131,47 @@ func TestLoadConfig(t *testing.T) {
 	}
 	if opts := cfg.Client.Options(); opts.BaseEndpoint != nil || opts.UsePathStyle {
 		t.Fatalf("unexpected endpoint override: %v, path style %v", opts.BaseEndpoint, opts.UsePathStyle)
+	}
+}
+
+func TestLoadConfigFromFiles(t *testing.T) {
+	isolateAWS(t)
+	dir := t.TempDir()
+	keyPEM, pub := testKeyPEM(t)
+	authKey, _ := authorizedKey(t, "a comment, with a comma")
+	write := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	cfg, err := loadConfig(context.Background(), envMap(map[string]string{
+		"S3_BUCKET":          "b",
+		"S3_REGION":          "us-east-1",
+		"SFTP_USERS_FILE":    write("users", "alice:"+authKey+"\nbob:pw\n"),
+		"SFTP_HOST_KEY_FILE": write("host_key", keyPEM),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Users["alice"].Keys) != 1 || cfg.Users["bob"].Password != "pw" {
+		t.Fatalf("users = %+v", cfg.Users)
+	}
+	if string(cfg.HostKey.PublicKey().Marshal()) != string(pub.Marshal()) {
+		t.Fatal("host key not read from SFTP_HOST_KEY_FILE")
+	}
+
+	for name, env := range map[string]map[string]string{
+		"set SFTP_USERS or SFTP_USERS_FILE, not both": {"SFTP_USERS": "a:b", "SFTP_USERS_FILE": write("u2", "a:b")},
+		"SFTP_USERS_FILE: open":                       {"SFTP_USERS_FILE": filepath.Join(dir, "missing")},
+		"SFTP_HOST_KEY_FILE: open":                    {"SFTP_USERS": "a:b", "SFTP_HOST_KEY_FILE": filepath.Join(dir, "missing")},
+		"set SFTP_HOST_KEY or SFTP_HOST_KEY_FILE":     {"SFTP_USERS": "a:b", "SFTP_HOST_KEY": keyPEM, "SFTP_HOST_KEY_FILE": write("k2", keyPEM)},
+	} {
+		env["S3_BUCKET"], env["S3_REGION"] = "b", "us-east-1"
+		if _, err := loadConfig(context.Background(), envMap(env)); err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("err = %v, want it to mention %q", err, name)
+		}
 	}
 }
 

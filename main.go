@@ -96,6 +96,23 @@ func run(ctx context.Context, getenv func(string) string) error {
 	return srv.Serve(ln)
 }
 
+// secretEnv returns the value of name, or the contents of the file named by
+// name_FILE. Setting both is an error, so it is always clear which one won.
+func secretEnv(getenv func(string) string, name string) (string, error) {
+	v, path := getenv(name), getenv(name+"_FILE")
+	switch {
+	case path == "":
+		return v, nil
+	case v != "":
+		return "", fmt.Errorf("set %s or %s_FILE, not both", name, name)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("%s_FILE: %w", name, err)
+	}
+	return string(b), nil
+}
+
 func orDefault(v, def string) string {
 	if v != "" {
 		return v
@@ -105,6 +122,9 @@ func orDefault(v, def string) string {
 
 // loadConfig builds the gateway config from environment variables:
 // S3_BUCKET, SFTP_USERS, and optionally S3_PREFIX, SFTP_HOST_KEY,
+// (SFTP_USERS and SFTP_HOST_KEY may instead be read from a file named by
+// SFTP_USERS_FILE / SFTP_HOST_KEY_FILE, the Docker and Kubernetes secrets
+// convention),
 // S3_PART_SIZE_MB, SFTP_MAX_CONNECTIONS, and the store settings S3_ENDPOINT, S3_REGION,
 // S3_PATH_STYLE, S3_CHECKSUM (see internal/s3client). Credentials come from
 // the AWS SDK's default chain (AWS_ACCESS_KEY_ID/..., profiles, IAM roles).
@@ -116,13 +136,21 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 	}
 	cfg.Prefix = getenv("S3_PREFIX")
 	var err error
-	if cfg.Users, err = parseUsers(getenv("SFTP_USERS")); err != nil {
+	users, err := secretEnv(getenv, "SFTP_USERS")
+	if err != nil {
+		return cfg, err
+	}
+	if cfg.Users, err = parseUsers(users); err != nil {
 		return cfg, err
 	}
 	for _, name := range plaintextUsers(cfg.Users) {
 		slog.Warn("plaintext password; store a bcrypt hash instead", "user", name)
 	}
-	if cfg.HostKey, err = hostKey(getenv("SFTP_HOST_KEY")); err != nil {
+	key, err := secretEnv(getenv, "SFTP_HOST_KEY")
+	if err != nil {
+		return cfg, err
+	}
+	if cfg.HostKey, err = hostKey(key); err != nil {
 		return cfg, err
 	}
 	if mb := getenv("S3_PART_SIZE_MB"); mb != "" {
