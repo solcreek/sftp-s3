@@ -8,7 +8,7 @@ not only HTTP.
 | A VM (EC2, GCE, any VPS) | yes | simplest; disable the host's `sshd` or move it off port 22 |
 | AWS ECS Fargate + NLB, or EC2 | yes | [deploy/aws](../deploy/aws/README.md); measured in [deploy-aws.md](deploy-aws.md) |
 | Kubernetes (EKS, GKE, AKS, …) | yes | a `LoadBalancer` Service in TCP / passthrough mode: [examples/kubernetes](../examples/kubernetes/README.md) |
-| Fly.io | should | TCP services; needs a dedicated IPv4 for port 22. [fly.toml](../fly.toml) is not verified yet |
+| Fly.io | yes | TCP services; needs a dedicated IPv4 for port 22: [fly.toml](../fly.toml). Logs show Fly's proxy address instead of client IPs |
 | Google Cloud Run | no | ingress is HTTP/1, HTTP/2, gRPC and WebSocket only |
 | AWS App Runner, Render | no | HTTP only |
 
@@ -24,7 +24,8 @@ filesystem.
 - **A graceful stop window.** On SIGTERM the gateway stops accepting
   connections and waits for open sessions. Give it as long as your platform
   allows (Fargate: `stopTimeout` up to 120 s; Kubernetes:
-  `terminationGracePeriodSeconds`).
+  `terminationGracePeriodSeconds`; Fly.io: `kill_signal = "SIGTERM"` and
+  `kill_timeout`, whose defaults of SIGINT and 5 s would cut uploads).
 - **Memory for `SFTP_MAX_CONNECTIONS`**: about 120 MiB per concurrent large
   upload.
 - **An `AbortIncompleteMultipartUpload` lifecycle rule** on the bucket.

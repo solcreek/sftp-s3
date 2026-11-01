@@ -1,13 +1,22 @@
 # Fly.io runs raw TCP services, so it can host the gateway on port 22.
-# Not verified for this release; please report how it goes.
 #
-#   fly launch --no-deploy --copy-config      # pick a unique app name
-#   fly secrets set S3_BUCKET=... AWS_REGION=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
+#   fly apps create my-sftp                   # then set app = "my-sftp" below
+#   fly secrets set --stage S3_BUCKET=... AWS_REGION=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
 #                   SFTP_USERS="$(cat users)" SFTP_HOST_KEY="$(cat host_ed25519)"
 #   fly ips allocate-v4                       # a dedicated IPv4: port 22 needs one
-#   fly deploy
+#   fly deploy                                # two machines by default; --ha=false for one
+#
+# Verified 2026-11-01 in nrt with one machine, building from the Dockerfile
+# instead of pulling the image: key login, a 32 MiB upload with matching md5
+# in S3, and an upload that kept running across `fly deploy` (SIGTERM, then
+# the session finished and the process exited 0). Logs show Fly's proxy
+# address, not the client's.
 app = "sftp-s3"
 primary_region = "nrt"
+# On a deploy the gateway stops accepting and waits for open sessions; give
+# uploads in flight time to finish (Fly's default is SIGINT and 5 s).
+kill_signal = "SIGTERM"
+kill_timeout = 120
 
 [build]
   image = "ghcr.io/solcreek/sftp-s3:0.1"
