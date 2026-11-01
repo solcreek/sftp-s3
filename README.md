@@ -7,7 +7,8 @@ S3 as multipart uploads and never touch local disk.
 - One static binary or a distroless container. Configuration is environment
   variables only.
 - Works with AWS S3 and S3-compatible stores: Google Cloud Storage,
-  Cloudflare R2 and MinIO all pass the integration suite.
+  Cloudflare R2, MinIO, RustFS, SeaweedFS and Versity Gateway all pass the
+  integration suite.
 - Each user is confined to `s3://<bucket>/<prefix><user>/`.
 - Hardened for a public port 22: delayed answers to wrong passwords, a login
   timeout, and a connection cap.
@@ -15,6 +16,9 @@ S3 as multipart uploads and never touch local disk.
   finish.
 
 ## Quick start
+
+The fastest way to try it is [Docker Compose with a local S3 store](examples/compose/README.md).
+To run it against your own bucket:
 
 ```sh
 git clone https://github.com/solcreek/sftp-s3 && cd sftp-s3
@@ -88,6 +92,9 @@ Setting `S3_ENDPOINT` switches to defaults that compatible stores accept:
 | Google Cloud Storage | `https://storage.googleapis.com` | HMAC key of a service account with `roles/storage.objectAdmin` | ✅ 2026-10-31 |
 | Cloudflare R2 | `https://<account-id>.r2.cloudflarestorage.com` | `S3_REGION=auto`; access key and secret of an R2 API token | ✅ 2026-10-31, both checksum modes |
 | MinIO | `http://host:9000` | | ✅ 2026-10-31, both checksum modes |
+| RustFS 1.0.4 | `http://host:9000` | | ✅ 2026-11-01, both checksum modes |
+| SeaweedFS | `http://host:8333` | `weed server -s3` | ✅ 2026-11-01, both checksum modes |
+| Versity Gateway | `http://host:7070` | `versitygw posix` | ✅ 2026-11-01, both checksum modes |
 
 Another store can be checked with `make conformance` (see
 [CONTRIBUTING.md](CONTRIBUTING.md)).
