@@ -7,10 +7,13 @@
 #   fly deploy                                # two machines by default; --ha=false for one
 #
 # Verified 2026-11-01 in nrt with one machine, building from the Dockerfile
-# instead of pulling the image: key login, a 32 MiB upload with matching md5
-# in S3, and an upload that kept running across `fly deploy` (SIGTERM, then
-# the session finished and the process exited 0). Logs show Fly's proxy
-# address, not the client's.
+# instead of pulling the image:
+# - key login and a 32 MiB upload with matching md5 in S3;
+# - an upload that kept running across `fly deploy` (SIGTERM, then the
+#   session finished and the process exited 0);
+# - with proxy_proto, logs show the client's address.
+# Right after `fly ips allocate-v4` and the first deploy, connections were
+# closed before reaching the machine for about half a minute, twice.
 app = "sftp-s3"
 primary_region = "nrt"
 # On a deploy the gateway stops accepting and waits for open sessions; give
@@ -21,6 +24,11 @@ kill_timeout = 120
 [build]
   image = "ghcr.io/solcreek/sftp-s3:0.1"
 
+[env]
+  # Fly's proxy prepends a PROXY protocol header (handlers below), so the
+  # logs show client addresses instead of the proxy's.
+  SFTP_PROXY_PROTOCOL = "on"
+
 [[services]]
   internal_port = 2222
   protocol = "tcp"
@@ -28,6 +36,8 @@ kill_timeout = 120
   min_machines_running = 1
   [[services.ports]]
     port = 22
+    handlers = ["proxy_proto"]
+    proxy_proto_options = { version = "v2" }
   [[services.tcp_checks]]
     interval = "15s"
     timeout = "2s"
