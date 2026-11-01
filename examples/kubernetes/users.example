@@ -1,0 +1,3 @@
+# Copy to "users". One user:credential per line: an authorized_keys line,
+# a bcrypt hash (sftp-s3 -hash-password), or a plaintext password.
+alice:ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... alice@laptop

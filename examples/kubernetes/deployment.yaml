@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sftp-s3
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {}
+  template:
+    spec:
+      serviceAccountName: sftp-s3
+      # On SIGTERM the server stops accepting and waits for open sessions;
+      # this is how long uploads in flight get during a rollout.
+      terminationGracePeriodSeconds: 300
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: sftp-s3
+      containers:
+        - name: sftp-s3
+          image: ghcr.io/solcreek/sftp-s3
+          ports:
+            - name: sftp
+              containerPort: 2222
+          envFrom:
+            - configMapRef:
+                name: sftp-s3
+            # Static S3 credentials, if you do not use workload identity
+            # (see serviceaccount.yaml):
+            # - secretRef:
+            #     name: sftp-s3-aws   # AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+          env:
+            - name: PORT
+              value: "2222"
+            - name: SFTP_USERS_FILE
+              value: /config/users
+            - name: SFTP_HOST_KEY_FILE
+              value: /config/host_key
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+          readinessProbe:
+            tcpSocket:
+              port: sftp
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: sftp
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+      volumes:
+        - name: config
+          secret:
+            secretName: sftp-s3
+            defaultMode: 0440

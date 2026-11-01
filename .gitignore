@@ -5,3 +5,6 @@
 /deploy/aws/*.tfstate.*
 /deploy/aws/*.tfvars
 /dist/
+/examples/*/users
+/examples/*/host_key
+/examples/*/host_key.pub

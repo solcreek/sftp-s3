@@ -1,0 +1,23 @@
+# kubectl apply -k examples/kubernetes   (after editing the files listed below)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+labels:
+  - pairs:
+      app.kubernetes.io/name: sftp-s3
+    includeSelectors: true
+resources:
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+  - serviceaccount.yaml
+configMapGenerator:
+  - name: sftp-s3
+    envs: [sftp-s3.env]          # bucket, region, endpoint, limits
+secretGenerator:
+  - name: sftp-s3
+    files:
+      - users                    # SFTP_USERS format, one entry per line
+      - host_key                 # ssh-keygen -t ed25519 -N '' -f host_key
+images:
+  - name: ghcr.io/solcreek/sftp-s3
+    newTag: "0.1"
