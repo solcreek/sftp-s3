@@ -117,11 +117,22 @@ func TestPublicKeyLogin(t *testing.T) {
 		c.Users["dave"] = User{Keys: []ssh.PublicKey{newKey(t).PublicKey(), daveKey.PublicKey()}}
 	})
 
+	var logs syncBuffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	c, err := e.sshDialKey("dave", daveKey)
 	if err != nil {
 		t.Fatalf("key login failed: %v", err)
 	}
 	c.Close()
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(logs.String(), "auth="+ssh.FingerprintSHA256(daveKey.PublicKey())) {
+		if time.Now().After(deadline) {
+			t.Fatalf("login log does not name the key:\n%s", logs.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	slog.SetDefault(prev)
 
 	for name, dial := range map[string]func() (*ssh.Client, error){
 		"another key":             func() (*ssh.Client, error) { return e.sshDialKey("dave", otherKey) },

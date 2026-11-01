@@ -145,7 +145,11 @@ func (s *Server) handleConn(nc net.Conn) {
 	}
 	nc.SetDeadline(time.Time{}) // logged in: sessions may idle and transfer as long as they like
 	defer sc.Close()
-	slog.Info("login", "user", sc.User(), "remote", nc.RemoteAddr())
+	method := "password"
+	if fp, ok := sc.Permissions.Extensions["pubkey-fp"]; ok {
+		method = fp
+	}
+	slog.Info("login", "user", sc.User(), "remote", nc.RemoteAddr(), "auth", method)
 	go ssh.DiscardRequests(reqs)
 
 	fs := s.userFS(sc.User())
