@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -257,10 +258,32 @@ func TestParseFlags(t *testing.T) {
 	}
 	for _, tt := range tests {
 		var out, errOut strings.Builder
-		code, done := parseFlags(tt.args, &out, &errOut)
+		code, done := parseFlags(tt.args, strings.NewReader(""), &out, &errOut)
 		if code != tt.code || done != tt.done || out.String() != tt.out || !strings.Contains(errOut.String(), tt.err) {
 			t.Errorf("parseFlags(%q) = %d, %v, stdout %q, stderr %q", tt.args, code, done, out.String(), errOut.String())
 		}
+	}
+}
+
+func TestHashPassword(t *testing.T) {
+	var out, errOut strings.Builder
+	code, done := parseFlags([]string{"-hash-password"}, strings.NewReader("correct horse\n"), &out, &errOut)
+	if code != 0 || !done {
+		t.Fatalf("exit %d, done %v, stderr %q", code, done, errOut.String())
+	}
+	hash := strings.TrimSpace(out.String())
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte("correct horse")) != nil {
+		t.Fatalf("%q is not a bcrypt hash of the input (trailing newline must be dropped)", hash)
+	}
+	users, err := parseUsers("alice:" + hash)
+	if err != nil || users["alice"].PasswordHash != hash {
+		t.Fatalf("hash not usable in SFTP_USERS: %v %+v", err, users)
+	}
+
+	out.Reset()
+	errOut.Reset()
+	if code, _ := parseFlags([]string{"-hash-password"}, strings.NewReader("\n"), &out, &errOut); code != 1 || !strings.Contains(errOut.String(), "empty password") {
+		t.Fatalf("empty input: exit %d, stderr %q", code, errOut.String())
 	}
 }
 

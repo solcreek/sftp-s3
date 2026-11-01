@@ -61,7 +61,8 @@ alice:$2a$10$Kx2C3e2n0yIXJm1Ii5v9VewC0Q7m0Jx2c8p0b1mR5o2t5oQ8m3L2a
 bob:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ...
 ```
 
-`SFTP_USERS='alice:a-long-password'` is fine for a first try; the server logs
+Make a hash with `sftp-s3 -hash-password` (it prompts, or reads a line from
+stdin). `SFTP_USERS='alice:a-long-password'` is fine for a first try; the server logs
 a warning for every plaintext password. User names may not contain `/`, `.`
 or spaces: they become S3 key prefixes.
 

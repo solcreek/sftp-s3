@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -18,9 +19,12 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/term"
 
 	"github.com/solcreek/sftp-s3/internal/gateway"
 	"github.com/solcreek/sftp-s3/internal/s3client"
@@ -30,7 +34,7 @@ import (
 var version = "dev"
 
 func main() {
-	if code, done := parseFlags(os.Args[1:], os.Stdout, os.Stderr); done {
+	if code, done := parseFlags(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); done {
 		os.Exit(code)
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -46,14 +50,15 @@ func main() {
 
 // parseFlags handles the command line. Configuration itself is environment
 // variables only; done reports that the process should exit with code.
-func parseFlags(args []string, stdout, stderr io.Writer) (code int, done bool) {
+func parseFlags(args []string, stdin io.Reader, stdout, stderr io.Writer) (code int, done bool) {
 	fs := flag.NewFlagSet("sftp-s3", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: sftp-s3 [-version]\n\nAn SFTP server backed by S3, configured through environment variables:\nhttps://github.com/solcreek/sftp-s3#configuration\n\n")
+		fmt.Fprintf(stderr, "Usage: sftp-s3 [-version | -hash-password]\n\nAn SFTP server backed by S3, configured through environment variables:\nhttps://github.com/solcreek/sftp-s3#configuration\n\n")
 		fs.PrintDefaults()
 	}
 	showVersion := fs.Bool("version", false, "print the version and exit")
+	hashPassword := fs.Bool("hash-password", false, "read a password from stdin, print its bcrypt hash for SFTP_USERS, and exit")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			return 0, true
@@ -69,7 +74,42 @@ func parseFlags(args []string, stdout, stderr io.Writer) (code int, done bool) {
 		fmt.Fprintln(stdout, "sftp-s3", version)
 		return 0, true
 	}
+	if *hashPassword {
+		hash, err := hashFromInput(stdin, stderr)
+		if err != nil {
+			fmt.Fprintln(stderr, "sftp-s3:", err)
+			return 1, true
+		}
+		fmt.Fprintln(stdout, hash)
+		return 0, true
+	}
 	return 0, false
+}
+
+// hashFromInput reads one password, without echo when stdin is a terminal,
+// and returns its bcrypt hash.
+func hashFromInput(stdin io.Reader, stderr io.Writer) (string, error) {
+	var pass []byte
+	if f, ok := stdin.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		fmt.Fprint(stderr, "Password: ")
+		p, err := term.ReadPassword(int(f.Fd()))
+		fmt.Fprintln(stderr)
+		if err != nil {
+			return "", err
+		}
+		pass = p
+	} else {
+		line, err := bufio.NewReader(stdin).ReadString('\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return "", err
+		}
+		pass = []byte(strings.TrimRight(line, "\r\n"))
+	}
+	if len(pass) == 0 {
+		return "", errors.New("empty password")
+	}
+	hash, err := bcrypt.GenerateFromPassword(pass, bcrypt.DefaultCost)
+	return string(hash), err
 }
 
 func run(ctx context.Context, getenv func(string) string) error {
@@ -144,7 +184,7 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 		return cfg, err
 	}
 	for _, name := range plaintextUsers(cfg.Users) {
-		slog.Warn("plaintext password; store a bcrypt hash instead", "user", name)
+		slog.Warn("plaintext password; store a bcrypt hash instead (sftp-s3 -hash-password)", "user", name)
 	}
 	key, err := secretEnv(getenv, "SFTP_HOST_KEY")
 	if err != nil {
