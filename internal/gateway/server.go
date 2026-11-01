@@ -45,6 +45,9 @@ type Config struct {
 	MaxConns int
 }
 
+// limitWarnEvery throttles the "connection limit reached" log.
+const limitWarnEvery = 10 * time.Second
+
 // Server accepts SSH connections and serves the sftp subsystem.
 type Server struct {
 	cfg    Config
@@ -102,6 +105,8 @@ func New(cfg Config) (*Server, error) {
 // sessions to finish. It returns nil when ln was closed.
 func (s *Server) Serve(ln net.Listener) error {
 	defer s.wg.Wait()
+	var rejected int
+	var lastWarn time.Time
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
@@ -113,7 +118,13 @@ func (s *Server) Serve(ln net.Listener) error {
 		select {
 		case s.slots <- struct{}{}:
 		default:
-			slog.Warn("connection limit reached", "remote", conn.RemoteAddr(), "max", s.cfg.MaxConns)
+			// Health checks and floods keep arriving while full: log at
+			// most once per limitWarnEvery, with the count since last time.
+			rejected++
+			if time.Since(lastWarn) >= limitWarnEvery {
+				slog.Warn("connection limit reached", "remote", conn.RemoteAddr(), "max", s.cfg.MaxConns, "rejected", rejected)
+				lastWarn, rejected = time.Now(), 0
+			}
 			conn.Close()
 			continue
 		}

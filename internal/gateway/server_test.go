@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -151,6 +152,47 @@ func TestConnectionLimit(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+}
+
+func TestConnectionLimitLogIsThrottled(t *testing.T) {
+	var buf syncBuffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	e := newEnv(t, func(c *Config) { c.MaxConns = 1 })
+	held, err := e.sshDial("alice", "alice-pw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Close()
+	for range 5 {
+		if c, err := e.sshDial("alice", "alice-pw"); err == nil {
+			c.Close()
+			t.Fatal("connection accepted past the limit")
+		}
+	}
+	if n := strings.Count(buf.String(), "connection limit reached"); n != 1 {
+		t.Fatalf("logged the limit %d times for 5 rejections within %v, want 1:\n%s", n, limitWarnEvery, buf.String())
+	}
+}
+
+// syncBuffer is a bytes.Buffer safe for the server's goroutines to log into.
+type syncBuffer struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }
 
 func TestOnlyTheSFTPSubsystemIsServed(t *testing.T) {
