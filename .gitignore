@@ -4,3 +4,4 @@
 /deploy/aws/*.tfstate
 /deploy/aws/*.tfstate.*
 /deploy/aws/*.tfvars
+/dist/

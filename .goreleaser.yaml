@@ -1,0 +1,68 @@
+# Release on a v* tag (.github/workflows/release.yml):
+# - binaries for Linux, macOS and Windows, amd64 and arm64, with checksums
+#   and SBOMs;
+# - a multi-arch distroless image at ghcr.io/solcreek/sftp-s3, built by ko;
+# - keyless cosign signatures on the checksums and the image.
+# Local dry run: goreleaser release --snapshot --clean --skip=ko,sign,sbom
+version: 2
+project_name: sftp-s3
+
+builds:
+  - id: sftp-s3
+    main: .
+    binary: sftp-s3
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: ["-s -w -X main.version={{.Version}}"]
+    mod_timestamp: "{{.CommitTimestamp}}"
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE, README.md, CHANGELOG.md]
+
+checksum:
+  name_template: checksums.txt
+
+sboms:
+  - artifacts: archive
+
+kos:
+  - id: image
+    build: sftp-s3
+    repositories: [ghcr.io/solcreek/sftp-s3]
+    base_image: gcr.io/distroless/static-debian12:nonroot
+    platforms: [linux/amd64, linux/arm64]
+    bare: true
+    sbom: spdx
+    creation_time: "{{.CommitTimestamp}}"
+    ko_data_creation_time: "{{.CommitTimestamp}}"
+    labels:
+      org.opencontainers.image.source: https://github.com/solcreek/sftp-s3
+      org.opencontainers.image.description: SFTP server backed by S3
+      org.opencontainers.image.licenses: Apache-2.0
+      org.opencontainers.image.version: "{{.Version}}"
+    tags:
+      - "{{.Version}}"
+      - '{{if not .Prerelease}}{{.Major}}.{{.Minor}}{{end}}'
+      - '{{if not .Prerelease}}latest{{end}}'
+
+signs:
+  - cmd: cosign
+    artifacts: checksum
+    signature: "${artifact}.sigstore.json"
+    args: [sign-blob, "--bundle=${signature}", "${artifact}", --yes]
+
+docker_signs:
+  - artifacts: manifests
+    args: [sign, "${artifact}@${digest}", --yes]
+
+release:
+  prerelease: auto
+
+changelog:
+  use: github-native
