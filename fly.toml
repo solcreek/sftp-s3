@@ -3,7 +3,7 @@
 #   fly secrets set S3_BUCKET=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=... \
 #                   SFTP_USERS='alice:...' SFTP_HOST_KEY="$(cat host_ed25519)"
 #   fly ips allocate-v4      # dedicated IPv4: raw TCP on port 22 needs one
-app = "sftp-s3-poc"
+app = "sftp-s3"  # must be unique on Fly.io; change it
 primary_region = "nrt"
 
 [build]

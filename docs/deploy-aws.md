@@ -61,9 +61,10 @@ Actions. The hand-built experiment stack was deleted the same day.
 - **Client IPs:** with IP targets the NLB hides them unless
   `preserve_client_ip` is on. With it on, a task security group that only
   admits the NLB's security group still works.
-- **GitHub OIDC with immutable subjects:** solcreek/sftp-s3 sends
-  `sub = repo:solcreek@234071385/sftp-s3@1441209972:ref:refs/heads/main`, so
-  a trust condition on `repo:solcreek/sftp-s3:*` is refused.
+- **GitHub OIDC with immutable subjects:** such a repository sends
+  `sub = repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main`, so
+  a trust condition on `repo:<owner>/<repo>:*` is refused; the stack's
+  `github_sub_prefix` takes the exact prefix.
 - **Port 22 on EC2** is free once the host `sshd` is disabled; SSM Session
   Manager replaces it for administration.
 

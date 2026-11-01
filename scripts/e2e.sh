@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# End-to-end test + rough benchmark of one POC server against a local S3 (MinIO).
+# End-to-end test + rough benchmark of the server binary against a local S3 (MinIO).
 # usage: scripts/e2e.sh <server-binary> <bigfile>
 # needs: sshpass, OpenSSH sftp, aws CLI, MinIO on $S3_ENDPOINT with bucket $S3_BUCKET
 set -euo pipefail
 BIN=$1 BIG=$2
 PORT=${PORT:-2222}
-export S3_BUCKET=${S3_BUCKET:-sftp-poc} S3_ENDPOINT=${S3_ENDPOINT:-http://127.0.0.1:9000}
+export S3_BUCKET=${S3_BUCKET:-sftp-s3-e2e} S3_ENDPOINT=${S3_ENDPOINT:-http://127.0.0.1:9000}
 export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-minioadmin} AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-minioadmin}
 export AWS_REGION=${AWS_REGION:-us-east-1} SFTP_USERS="alice:secret,bob:other" PORT
 TMP=$(mktemp -d); trap 'kill $SRV 2>/dev/null; rm -rf $TMP' EXIT
