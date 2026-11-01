@@ -68,7 +68,7 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 		Client:   client,
 		Bucket:   bucket,
 		Prefix:   base,
-		Users:    map[string]string{"alice": "alice-pw", "bob": "bob-pw"},
+		Users:    map[string]User{"alice": {Password: "alice-pw"}, "bob": {Password: "bob-pw"}},
 		HostKey:  signer,
 		PartSize: 5 << 20, // S3's minimum, so multi-part paths run on small files
 
@@ -100,6 +100,14 @@ func (e *env) sshDial(user, pass string) (*ssh.Client, error) {
 	return ssh.Dial("tcp", e.addr, &ssh.ClientConfig{
 		User:            user,
 		Auth:            []ssh.AuthMethod{ssh.Password(pass)},
+		HostKeyCallback: ssh.FixedHostKey(e.hostPK),
+	})
+}
+
+func (e *env) sshDialKey(user string, key ssh.Signer) (*ssh.Client, error) {
+	return ssh.Dial("tcp", e.addr, &ssh.ClientConfig{
+		User:            user,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(key)},
 		HostKeyCallback: ssh.FixedHostKey(e.hostPK),
 	})
 }

@@ -117,8 +117,13 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 	}
 	cfg.Prefix = getenv("S3_PREFIX")
 	var err error
-	if cfg.Users, err = parseUsers(getenv("SFTP_USERS")); err != nil {
+	passwords, err := parseUsers(getenv("SFTP_USERS"))
+	if err != nil {
 		return cfg, err
+	}
+	cfg.Users = make(map[string]gateway.User, len(passwords))
+	for name, pw := range passwords {
+		cfg.Users[name] = gateway.User{Password: pw}
 	}
 	if cfg.HostKey, err = hostKey(getenv("SFTP_HOST_KEY")); err != nil {
 		return cfg, err

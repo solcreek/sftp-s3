@@ -92,7 +92,7 @@ func TestLoadConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Bucket != "uploads" || cfg.Prefix != "sftp/" || cfg.Users["alice"] != "pw" {
+	if cfg.Bucket != "uploads" || cfg.Prefix != "sftp/" || cfg.Users["alice"].Password != "pw" {
 		t.Fatalf("cfg = %+v", cfg)
 	}
 	if string(cfg.HostKey.PublicKey().Marshal()) != string(pub.Marshal()) {

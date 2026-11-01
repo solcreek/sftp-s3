@@ -3,7 +3,6 @@ package gateway
 
 import (
 	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
@@ -18,13 +17,13 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// Config describes one gateway. Users maps a login name to its password;
-// each user is confined to s3://Bucket/Prefix<user>/.
+// Config describes one gateway. Users maps a login name to its
+// credentials; each user is confined to s3://Bucket/Prefix<user>/.
 type Config struct {
 	Client     *s3.Client
 	Bucket     string
 	Prefix     string
-	Users      map[string]string
+	Users      map[string]User
 	HostKey    ssh.Signer
 	PartSize   int64 // multipart part size; 0 means 8 MiB
 	MaxReorder int64 // out-of-order bytes buffered per upload; 0 means 64 MiB
@@ -86,16 +85,15 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AuthFailDelay == 0 {
 		cfg.AuthFailDelay = time.Second
 	}
-	users, delay := cfg.Users, cfg.AuthFailDelay
+	for name, u := range cfg.Users {
+		if err := u.validate(); err != nil {
+			return nil, fmt.Errorf("gateway: user %q: %w", name, err)
+		}
+	}
+	auth := authenticator{users: cfg.Users, delay: cfg.AuthFailDelay}
 	sshCfg := &ssh.ServerConfig{
-		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-			want, ok := users[c.User()]
-			if ok && subtle.ConstantTimeCompare([]byte(want), pass) == 1 {
-				return &ssh.Permissions{}, nil
-			}
-			time.Sleep(delay)
-			return nil, fmt.Errorf("auth failed for %q", c.User())
-		},
+		PasswordCallback:  auth.password,
+		PublicKeyCallback: auth.publicKey,
 	}
 	sshCfg.AddHostKey(cfg.HostKey)
 	return &Server{cfg: cfg, sshCfg: sshCfg, slots: make(chan struct{}, cfg.MaxConns)}, nil

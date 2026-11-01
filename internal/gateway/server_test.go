@@ -18,6 +18,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/pkg/sftp"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -25,14 +26,19 @@ func TestNewValidatesConfig(t *testing.T) {
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
 	signer, _ := ssh.NewSignerFromKey(priv)
 	valid := func() Config {
-		return Config{Client: &s3.Client{}, Bucket: "b", Users: map[string]string{"u": "p"}, HostKey: signer}
+		return Config{Client: &s3.Client{}, Bucket: "b", Users: map[string]User{"u": {Password: "p"}}, HostKey: signer}
 	}
 	tests := map[string]func(*Config){
-		"client":   func(c *Config) { c.Client = nil },
-		"bucket":   func(c *Config) { c.Bucket = "" },
-		"user":     func(c *Config) { c.Users = nil },
-		"MaxConns": func(c *Config) { c.MaxConns = -1 },
-		"host key": func(c *Config) { c.HostKey = nil },
+		"client":                   func(c *Config) { c.Client = nil },
+		"bucket":                   func(c *Config) { c.Bucket = "" },
+		"user":                     func(c *Config) { c.Users = nil },
+		"MaxConns":                 func(c *Config) { c.MaxConns = -1 },
+		"no password, hash or key": func(c *Config) { c.Users = map[string]User{"u": {}} },
+		"both a password and a password hash": func(c *Config) {
+			c.Users = map[string]User{"u": {Password: "p", PasswordHash: "$2a$04$abcdefghijklmnopqrstuuJ5Qo3b1T6p2Q9xWZ9b2nE0m5n7lWcm"}}
+		},
+		"password hash:": func(c *Config) { c.Users = map[string]User{"u": {PasswordHash: "$2a$not-a-hash"}} },
+		"host key":       func(c *Config) { c.HostKey = nil },
 	}
 	for missing, mutate := range tests {
 		cfg := valid()
@@ -69,6 +75,64 @@ func TestAuthentication(t *testing.T) {
 		t.Fatalf("valid login failed: %v", err)
 	}
 	c.Close()
+}
+
+func newKey(t *testing.T) ssh.Signer {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestPasswordHashLogin(t *testing.T) {
+	hash, err := bcrypt.GenerateFromPassword([]byte("carol-pw"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := newEnv(t, func(c *Config) { c.Users["carol"] = User{PasswordHash: string(hash)} })
+	if c, err := e.sshDial("carol", "wrong"); err == nil {
+		c.Close()
+		t.Fatal("wrong password accepted")
+	}
+	if c, err := e.sshDial("carol", string(hash)); err == nil {
+		c.Close()
+		t.Fatal("the hash itself was accepted as the password")
+	}
+	c, err := e.sshDial("carol", "carol-pw")
+	if err != nil {
+		t.Fatalf("bcrypt login failed: %v", err)
+	}
+	c.Close()
+}
+
+func TestPublicKeyLogin(t *testing.T) {
+	daveKey, otherKey := newKey(t), newKey(t)
+	e := newEnv(t, func(c *Config) {
+		c.Users["dave"] = User{Keys: []ssh.PublicKey{newKey(t).PublicKey(), daveKey.PublicKey()}}
+	})
+
+	c, err := e.sshDialKey("dave", daveKey)
+	if err != nil {
+		t.Fatalf("key login failed: %v", err)
+	}
+	c.Close()
+
+	for name, dial := range map[string]func() (*ssh.Client, error){
+		"another key":             func() (*ssh.Client, error) { return e.sshDialKey("dave", otherKey) },
+		"dave's key as alice":     func() (*ssh.Client, error) { return e.sshDialKey("alice", daveKey) },
+		"password for a key-only": func() (*ssh.Client, error) { return e.sshDial("dave", "") },
+	} {
+		if c, err := dial(); err == nil {
+			c.Close()
+			t.Errorf("%s: login accepted", name)
+		}
+	}
 }
 
 func TestFailedLoginIsDelayed(t *testing.T) {
@@ -307,7 +371,7 @@ func (failingListener) Accept() (net.Conn, error) {
 func TestServeReturnsAcceptErrors(t *testing.T) {
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
 	signer, _ := ssh.NewSignerFromKey(priv)
-	srv, err := New(Config{Client: &s3.Client{}, Bucket: "b", Users: map[string]string{"u": "p"}, HostKey: signer})
+	srv, err := New(Config{Client: &s3.Client{}, Bucket: "b", Users: map[string]User{"u": {Password: "p"}}, HostKey: signer})
 	if err != nil {
 		t.Fatal(err)
 	}
