@@ -199,32 +199,6 @@ func TestRun(t *testing.T) {
 	})
 }
 
-func TestParseUsers(t *testing.T) {
-	got, err := parseUsers(" alice:s3cret , bob:pa:ss ,")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(got) != 2 || got["alice"] != "s3cret" || got["bob"] != "pa:ss" {
-		t.Fatalf("parseUsers = %v", got)
-	}
-
-	for in, want := range map[string]string{
-		"":                  "SFTP_USERS must be",
-		" , ":               "SFTP_USERS must be",
-		"alice":             "not user:password",
-		"alice:":            "not user:password",
-		":pw":               "not user:password",
-		"alice:pa,ss":       "not user:password", // comma inside a password
-		"../evil:pw":        "may not contain",
-		"a.b:pw":            "may not contain",
-		"alice:one,alice:2": "listed twice",
-	} {
-		if _, err := parseUsers(in); err == nil || !strings.Contains(err.Error(), want) {
-			t.Errorf("parseUsers(%q) = %v, want error containing %q", in, err, want)
-		}
-	}
-}
-
 func TestParseFlags(t *testing.T) {
 	tests := []struct {
 		args     []string

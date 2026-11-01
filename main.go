@@ -18,7 +18,6 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"strings"
 	"syscall"
 
 	"golang.org/x/crypto/ssh"
@@ -117,13 +116,11 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 	}
 	cfg.Prefix = getenv("S3_PREFIX")
 	var err error
-	passwords, err := parseUsers(getenv("SFTP_USERS"))
-	if err != nil {
+	if cfg.Users, err = parseUsers(getenv("SFTP_USERS")); err != nil {
 		return cfg, err
 	}
-	cfg.Users = make(map[string]gateway.User, len(passwords))
-	for name, pw := range passwords {
-		cfg.Users[name] = gateway.User{Password: pw}
+	for _, name := range plaintextUsers(cfg.Users) {
+		slog.Warn("plaintext password; store a bcrypt hash instead", "user", name)
 	}
 	if cfg.HostKey, err = hostKey(getenv("SFTP_HOST_KEY")); err != nil {
 		return cfg, err
@@ -155,34 +152,6 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 	slog.Info("s3", "endpoint", orDefault(st.Endpoint, "aws"), "region", st.Region,
 		"path_style", st.PathStyle, "checksum", st.Checksum)
 	return cfg, nil
-}
-
-// parseUsers parses "alice:secret,bob:hunter2". Any malformed entry is an
-// error rather than skipped, so a typo cannot silently lock a user out or
-// truncate a password containing a comma. Names may not contain "/" or "."
-// since they become S3 key prefixes.
-func parseUsers(s string) (map[string]string, error) {
-	m := map[string]string{}
-	for _, pair := range strings.Split(s, ",") {
-		pair = strings.TrimSpace(pair)
-		if pair == "" {
-			continue
-		}
-		u, p, ok := strings.Cut(pair, ":")
-		switch {
-		case !ok || u == "" || p == "":
-			return nil, fmt.Errorf("SFTP_USERS: entry for %q is not user:password", u)
-		case strings.ContainsAny(u, "/."):
-			return nil, fmt.Errorf("SFTP_USERS: user %q may not contain '/' or '.'", u)
-		case m[u] != "":
-			return nil, fmt.Errorf("SFTP_USERS: user %q is listed twice", u)
-		}
-		m[u] = p
-	}
-	if len(m) == 0 {
-		return nil, errors.New("SFTP_USERS must be user:pass[,user:pass...]")
-	}
-	return m, nil
 }
 
 // hostKey parses a PEM private key, or generates an ephemeral ed25519 key when

@@ -34,7 +34,7 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 | variable | default | |
 |---|---|---|
 | `S3_BUCKET` | required | bucket to serve |
-| `SFTP_USERS` | required | `user:password,user2:password2`; names may not contain `/` or `.` |
+| `SFTP_USERS` | required | users and their credentials, see [Users](#users) |
 | `SFTP_HOST_KEY` | random per start | PEM private key (OpenSSH format, e.g. from `ssh-keygen`); set it in production |
 | `PORT` | `2222` | listen port |
 | `S3_PREFIX` | `""` | key prefix in front of every user's directory, e.g. `sftp/` |
@@ -44,6 +44,27 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 | `S3_REGION` | `AWS_REGION` | region to sign for |
 | `S3_PATH_STYLE` | see below | `true` or `false` |
 | `S3_CHECKSUM` | see below | `when_supported` or `when_required` |
+
+### Users
+
+`SFTP_USERS` lists `user:credential` entries, separated by commas or, when the
+value has several lines, by newlines. A credential is a public key in
+`authorized_keys` format, a bcrypt hash, or a plaintext password. A user may
+have several keys and at most one password; lines starting with `#` are
+ignored.
+
+```
+# one entry per line
+alice:ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... alice@laptop
+alice:$2a$10$Kx2C3e2n0yIXJm1Ii5v9VewC0Q7m0Jx2c8p0b1mR5o2t5oQ8m3L2a
+bob:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ...
+```
+
+`SFTP_USERS='alice:a-long-password'` is fine for a first try; the server logs
+a warning for every plaintext password. User names may not contain `/`, `.`
+or spaces: they become S3 key prefixes.
+
+### S3 credentials
 
 Credentials come from the AWS SDK's default chain: `AWS_ACCESS_KEY_ID` /
 `AWS_SECRET_ACCESS_KEY`, `AWS_PROFILE`, or an IAM role.
