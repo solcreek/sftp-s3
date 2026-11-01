@@ -18,13 +18,16 @@ Both shapes get the same base:
 - **Images:** an ECR repository with immutable tags.
 - **CI:** optionally, a role GitHub Actions assumes through OIDC to deploy.
 
-Verified 2026-11-01 with `compute = "ecs"` in ap-northeast-1 (OpenTofu
-1.13, AWS provider 6.71):
+Verified 2026-11-01 in ap-northeast-1 (OpenTofu 1.13, AWS provider 6.71):
 
-- apply from scratch, then an upload with its md5 checked in S3;
-- client IPs in the logs;
-- the 1 s delay after a wrong password, the 30 s login timeout, and the
-  connection cap.
+- `compute = "ecs"`:
+  - apply from scratch, then an upload with its md5 checked in S3;
+  - client IPs in the logs;
+  - the 1 s delay after a wrong password, the 30 s login timeout, and the
+    connection cap;
+  - a deploy through the workflow, after which `tofu plan` showed no changes.
+- Switching to `compute = "ec2"`: apply, an upload, a workflow deploy that
+  replaced the running image, and no plan changes afterwards.
 
 ## First deploy
 
@@ -100,6 +103,7 @@ configuration. Instead:
 |---|---|---|
 | `max_connections` | from memory | about 120 MiB per concurrent large upload: 3 per 512 MiB task, 14 on a t4g.small |
 | `cross_zone_load_balancing` | true | off, connections from one client pile onto one AZ's task (measured) |
+| `desired_count` | 2 | the NLB hashes flows and has no least-connections mode, so one task's cap trips before the total does (8 connections, 2 × 3 slots: 3 rejected). Leave headroom |
 | `task_cpu` / `task_memory` | 256 / 512 | 0.25 vCPU uploaded at 113 MiB/s in-region |
 | `s3_prefix` | `""` | every user lives under `<prefix><user>/` |
 

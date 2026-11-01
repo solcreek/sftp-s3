@@ -21,6 +21,10 @@ From the office/home link the gateway ran at the same speed as a direct
 `aws s3 cp` to Tokyo (≈ 2.3 MB/s both): the client's uplink is the limit, not
 the gateway. Prices are list prices from memory, not re-checked.
 
+The experiment is now code in [deploy/aws](../deploy/aws/README.md),
+verified 2026-11-01 for both shapes, including deploys through GitHub
+Actions. The hand-built experiment stack was deleted the same day.
+
 ## Findings
 
 - **NLB idle timeout is not a problem.** With the listener's
@@ -43,6 +47,23 @@ the gateway. Prices are list prices from memory, not re-checked.
 - **Health checks flooded the log.** The NLB's TCP health checks open and
   close a connection every few seconds per target. They are now logged at
   debug level (commits f15bebf, 9cf64c3).
+- **Without cross-zone load balancing, one client fills one task.** Eight
+  connections from one machine all reached the same task (2026-11-01): each
+  NLB address forwards only within its AZ, and ssh resolves the name once.
+  The stack turns cross-zone on.
+- **The NLB balances by flow hash, not by load.** With cross-zone on, 8
+  connections against 2 tasks × 3 slots still had 3 rejected (6 hashed to
+  one task). Per-task caps trip before total capacity, so leave headroom.
+- **Health checks count against the connection cap.** A full task turns away
+  the NLB's TCP probes too. The target stays healthy (the TCP handshake
+  completes), but the warning fired every few seconds; it is now throttled
+  to one line per 10 s with a count (commit 37e0925).
+- **Client IPs:** with IP targets the NLB hides them unless
+  `preserve_client_ip` is on. With it on, a task security group that only
+  admits the NLB's security group still works.
+- **GitHub OIDC with immutable subjects:** solcreek/sftp-s3 sends
+  `sub = repo:solcreek@234071385/sftp-s3@1441209972:ref:refs/heads/main`, so
+  a trust condition on `repo:solcreek/sftp-s3:*` is refused.
 - **Port 22 on EC2** is free once the host `sshd` is disabled; SSM Session
   Manager replaces it for administration.
 
@@ -94,9 +115,9 @@ ECS:
 
 ## Before production
 
-- [ ] Add a lifecycle rule `AbortIncompleteMultipartUpload` (e.g. 1 day).
-- [ ] Attach an Elastic IP per AZ to the NLB if customers allowlist our address.
-- [ ] Rate-limit failed logins and cap concurrent sessions in the server.
-      Size Fargate memory for about 120 MiB per concurrent large upload.
-- [ ] Turn the recipe into Terraform, and set up GitHub Actions with OIDC to
-      deploy (ko build → new task definition → `update-service`).
+- [x] `AbortIncompleteMultipartUpload` lifecycle rule (stack, when it owns the bucket).
+- [x] Elastic IP per AZ on the NLB.
+- [x] Failed-login delay, login timeout, connection cap (commits bb44f5b, ce04bb8, 862598f).
+- [x] OpenTofu stack and an OIDC deploy workflow.
+- [ ] Choose the production bucket (existing or stack-owned) and the client CIDRs.
+- [ ] Move the OpenTofu state to a shared backend.
