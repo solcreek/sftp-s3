@@ -225,6 +225,29 @@ func TestParseUsers(t *testing.T) {
 	}
 }
 
+func TestParseFlags(t *testing.T) {
+	tests := []struct {
+		args     []string
+		code     int
+		done     bool
+		out, err string
+	}{
+		{args: nil, code: 0, done: false},
+		{args: []string{"-version"}, code: 0, done: true, out: "sftp-s3 dev\n"},
+		{args: []string{"--version"}, code: 0, done: true, out: "sftp-s3 dev\n"},
+		{args: []string{"-h"}, code: 0, done: true, err: "environment variables"},
+		{args: []string{"-port", "22"}, code: 2, done: true, err: "flag provided but not defined"},
+		{args: []string{"serve"}, code: 2, done: true, err: `unexpected argument "serve"`},
+	}
+	for _, tt := range tests {
+		var out, errOut strings.Builder
+		code, done := parseFlags(tt.args, &out, &errOut)
+		if code != tt.code || done != tt.done || out.String() != tt.out || !strings.Contains(errOut.String(), tt.err) {
+			t.Errorf("parseFlags(%q) = %d, %v, stdout %q, stderr %q", tt.args, code, done, out.String(), errOut.String())
+		}
+	}
+}
+
 func TestOrDefault(t *testing.T) {
 	if orDefault("", "2222") != "2222" || orDefault("22", "2222") != "22" {
 		t.Fatal("orDefault")

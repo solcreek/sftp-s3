@@ -10,7 +10,9 @@ import (
 	"crypto/rand"
 	"encoding/pem"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -25,7 +27,13 @@ import (
 	"github.com/solcreek/sftp-s3/internal/s3client"
 )
 
+// version is set at release time: -ldflags "-X main.version=v1.2.3".
+var version = "dev"
+
 func main() {
+	if code, done := parseFlags(os.Args[1:], os.Stdout, os.Stderr); done {
+		os.Exit(code)
+	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
 	// Deploys send SIGTERM: stop accepting, let in-flight uploads finish.
 	// The platform's kill timeout bounds how long that can take.
@@ -35,6 +43,34 @@ func main() {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
+}
+
+// parseFlags handles the command line. Configuration itself is environment
+// variables only; done reports that the process should exit with code.
+func parseFlags(args []string, stdout, stderr io.Writer) (code int, done bool) {
+	fs := flag.NewFlagSet("sftp-s3", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		fmt.Fprintf(stderr, "Usage: sftp-s3 [-version]\n\nAn SFTP server backed by S3, configured through environment variables:\nhttps://github.com/solcreek/sftp-s3#configuration\n\n")
+		fs.PrintDefaults()
+	}
+	showVersion := fs.Bool("version", false, "print the version and exit")
+	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return 0, true
+		}
+		return 2, true
+	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(stderr, "unexpected argument %q\n", fs.Arg(0))
+		fs.Usage()
+		return 2, true
+	}
+	if *showVersion {
+		fmt.Fprintln(stdout, "sftp-s3", version)
+		return 0, true
+	}
+	return 0, false
 }
 
 func run(ctx context.Context, getenv func(string) string) error {
@@ -51,7 +87,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
-	slog.Info("listening", "addr", ln.Addr().String(), "bucket", cfg.Bucket,
+	slog.Info("listening", "version", version, "addr", ln.Addr().String(), "bucket", cfg.Bucket,
 		"fingerprint", ssh.FingerprintSHA256(cfg.HostKey.PublicKey()))
 	go func() {
 		<-ctx.Done()
