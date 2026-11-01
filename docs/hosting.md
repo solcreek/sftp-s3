@@ -6,9 +6,9 @@ not only HTTP.
 | platform | works | notes |
 |---|---|---|
 | A VM (EC2, GCE, any VPS) | yes | simplest; disable the host's `sshd` or move it off port 22 |
-| AWS ECS Fargate + NLB | yes | [deploy/aws](../deploy/aws/README.md); measured in [deploy-aws.md](deploy-aws.md) |
-| Kubernetes (EKS, GKE, AKS, …) | yes | a `LoadBalancer` Service in TCP / passthrough mode |
-| Fly.io | yes | TCP services; needs a dedicated IPv4 for port 22 ([fly.toml](../fly.toml)) |
+| AWS ECS Fargate + NLB, or EC2 | yes | [deploy/aws](../deploy/aws/README.md); measured in [deploy-aws.md](deploy-aws.md) |
+| Kubernetes (EKS, GKE, AKS, …) | yes | a `LoadBalancer` Service in TCP / passthrough mode: [examples/kubernetes](../examples/kubernetes/README.md) |
+| Fly.io | should | TCP services; needs a dedicated IPv4 for port 22. [fly.toml](../fly.toml) is not verified yet |
 | Google Cloud Run | no | ingress is HTTP/1, HTTP/2, gRPC and WebSocket only |
 | AWS App Runner, Render | no | HTTP only |
 

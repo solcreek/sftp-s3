@@ -1,13 +1,16 @@
-# Fly.io: one of the few "push a container" platforms that accepts raw TCP.
-# Deploy:  fly launch --no-deploy
-#   fly secrets set S3_BUCKET=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_REGION=... \
-#                   SFTP_USERS='alice:...' SFTP_HOST_KEY="$(cat host_ed25519)"
-#   fly ips allocate-v4      # dedicated IPv4: raw TCP on port 22 needs one
-app = "sftp-s3"  # must be unique on Fly.io; change it
+# Fly.io runs raw TCP services, so it can host the gateway on port 22.
+# Not verified for this release; please report how it goes.
+#
+#   fly launch --no-deploy --copy-config      # pick a unique app name
+#   fly secrets set S3_BUCKET=... AWS_REGION=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... \
+#                   SFTP_USERS="$(cat users)" SFTP_HOST_KEY="$(cat host_ed25519)"
+#   fly ips allocate-v4                       # a dedicated IPv4: port 22 needs one
+#   fly deploy
+app = "sftp-s3"
 primary_region = "nrt"
 
 [build]
-  dockerfile = "Dockerfile"
+  image = "ghcr.io/solcreek/sftp-s3:0.1"
 
 [[services]]
   internal_port = 2222

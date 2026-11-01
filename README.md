@@ -126,7 +126,7 @@ are immutable), symlinks, and `statvfs`.
 - **AWS:** an OpenTofu / Terraform module for ECS Fargate behind an NLB, or a
   single EC2 instance: [deploy/aws](deploy/aws/README.md), with a runnable
   [example](examples/aws).
-- **Fly.io:** [fly.toml](fly.toml).
+- **Fly.io:** [fly.toml](fly.toml) (not verified yet).
 - **Other platforms**, and the things every deployment needs:
   [docs/hosting.md](docs/hosting.md).
 
