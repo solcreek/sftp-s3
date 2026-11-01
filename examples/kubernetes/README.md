@@ -30,7 +30,11 @@ its `secretRef` in `deployment.yaml`. For Google Cloud Storage, use an HMAC
 key and set `S3_ENDPOINT=https://storage.googleapis.com`.
 
 **Load balancer.** Annotations are cloud-specific; `service.yaml` has the
-AWS NLB ones. Restrict sources with `loadBalancerSourceRanges`.
+AWS NLB ones. Restrict sources with `loadBalancerSourceRanges`. If your load
+balancer hides client addresses but can send a PROXY protocol header, turn
+that on and add `SFTP_PROXY_PROTOCOL=on` to `sftp-s3.env`. Every connection
+must then carry the header, health checks included, unless they only open
+a TCP connection. This combination is not covered by the test below.
 
 **Memory.** Each large upload holds about 120 MiB. Keep
 `SFTP_MAX_CONNECTIONS` in `sftp-s3.env` in line with the memory limit
