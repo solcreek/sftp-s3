@@ -1,9 +1,0 @@
-# cp terraform.tfvars.example terraform.tfvars  (git-ignored)
-compute       = "ecs" # or "ec2"
-allowed_cidrs = ["203.0.113.0/24"]
-bucket_name   = "my-sftp-uploads"
-create_bucket = true # false: use an existing bucket, see README.md
-image_tag     = "abc1234"
-# s3_prefix         = "sftp/"
-# github_repository = "solcreek/sftp-s3"
-# github_sub_prefix = "repo:my-org@123456/sftp-s3@7890123" # repos with immutable OIDC subjects

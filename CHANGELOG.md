@@ -20,4 +20,7 @@ First public release candidate.
 - Hardening: a delay after wrong passwords, a login timeout, and a
   connection cap (`SFTP_MAX_CONNECTIONS`).
 - Graceful shutdown on SIGTERM.
-- OpenTofu stack for AWS (ECS Fargate + NLB, or EC2).
+- Deployment: an OpenTofu / Terraform module for AWS (ECS Fargate + NLB, or
+  EC2), a Kubernetes kustomization, and a Docker Compose example.
+- Releases: binaries for Linux, macOS and Windows, and a multi-arch image at
+  `ghcr.io/solcreek/sftp-s3`, all signed with cosign.

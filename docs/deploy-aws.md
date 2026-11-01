@@ -63,8 +63,9 @@ Actions. The hand-built experiment stack was deleted the same day.
   admits the NLB's security group still works.
 - **GitHub OIDC with immutable subjects:** such a repository sends
   `sub = repo:<owner>@<owner-id>/<repo>@<repo-id>:ref:refs/heads/main`, so
-  a trust condition on `repo:<owner>/<repo>:*` is refused; the stack's
-  `github_sub_prefix` takes the exact prefix.
+  a trust condition on `repo:<owner>/<repo>:*` is refused. (Relevant if you
+  deploy from GitHub Actions; the module itself no longer includes a deploy
+  role.)
 - **Port 22 on EC2** is free once the host `sshd` is disabled; SSM Session
   Manager replaces it for administration.
 
@@ -119,6 +120,6 @@ ECS:
 - [x] `AbortIncompleteMultipartUpload` lifecycle rule (stack, when it owns the bucket).
 - [x] Elastic IP per AZ on the NLB.
 - [x] Failed-login delay, login timeout, connection cap (commits bb44f5b, ce04bb8, 862598f).
-- [x] OpenTofu stack and an OIDC deploy workflow.
+- [x] OpenTofu module (`deploy/aws`) with a runnable example (`examples/aws`).
 - [ ] Choose the production bucket (existing or stack-owned) and the client CIDRs.
 - [ ] Move the OpenTofu state to a shared backend.

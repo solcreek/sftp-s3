@@ -1,3 +1,5 @@
+# A module: configure the aws provider in the calling configuration
+# (see examples/aws).
 terraform {
   required_version = ">= 1.8"
   required_providers {
@@ -5,12 +7,9 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
-  }
-}
-
-provider "aws" {
-  region = var.region
-  default_tags {
-    tags = { project = var.name }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
   }
 }

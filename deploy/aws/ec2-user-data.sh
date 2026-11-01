@@ -1,6 +1,7 @@
 #!/bin/bash
 # Rendered by ec2.tf (templatefile). Installs docker and a systemd unit that
-# runs the image named in SSM, with secrets read from SSM at every start.
+# runs ${image}, with users and the host key read from SSM at every start.
+# Configuration hash (a change replaces the instance): ${config_hash}
 set -euxo pipefail
 
 # Port 22 belongs to SFTP; administration goes through SSM Session Manager.
@@ -14,8 +15,10 @@ cat > /usr/local/bin/sftp-s3-run <<'EOF'
 set -euo pipefail
 export AWS_REGION=${region}
 p() { aws ssm get-parameter --with-decryption --name "${param_prefix}/$1" --query Parameter.Value --output text; }
-image=$(p image)
-aws ecr get-login-password | docker login -u AWS --password-stdin ${registry}
+image='${image}'
+case "$image" in # private ECR images need a login; public images do not
+  *.dkr.ecr.*.amazonaws.com/*) aws ecr get-login-password | docker login -u AWS --password-stdin "$${image%%/*}" ;;
+esac
 docker pull "$image"
 docker rm -f sftp-s3 2>/dev/null || true
 exec docker run --rm --name sftp-s3 -p 22:2222 \

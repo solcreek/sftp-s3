@@ -6,8 +6,11 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+data "aws_region" "current" {}
+
 locals {
-  azs = slice(data.aws_availability_zones.available.names, 0, 2)
+  region = data.aws_region.current.region
+  azs    = slice(data.aws_availability_zones.available.names, 0, 2)
 }
 
 resource "aws_vpc" "this" {
@@ -47,7 +50,7 @@ resource "aws_route_table_association" "public" {
 
 resource "aws_vpc_endpoint" "s3" {
   vpc_id            = aws_vpc.this.id
-  service_name      = "com.amazonaws.${var.region}.s3"
+  service_name      = "com.amazonaws.${local.region}.s3"
   vpc_endpoint_type = "Gateway"
   route_table_ids   = [aws_route_table.public.id]
   tags              = { Name = "${var.name}-s3" }

@@ -38,6 +38,6 @@ resource "aws_iam_role_policy" "gateway_s3" {
 data "aws_iam_policy_document" "read_params" {
   statement {
     actions   = ["ssm:GetParameter", "ssm:GetParameters"]
-    resources = [for p in aws_ssm_parameter.runtime : p.arn]
+    resources = local.param_arns
   }
 }

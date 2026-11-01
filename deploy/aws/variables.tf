@@ -1,9 +1,3 @@
-variable "region" {
-  description = "AWS region; put it in the bucket's region so uploads never cross regions."
-  type        = string
-  default     = "ap-northeast-1"
-}
-
 variable "name" {
   description = "Name prefix for every resource, and the value of the `project` tag."
   type        = string
@@ -64,9 +58,26 @@ variable "force_destroy_bucket" {
 
 # ---------- image and runtime ----------
 
-variable "image_tag" {
-  description = "Tag in the stack's ECR repository to run at creation. Later deploys come from CI and are not reverted by apply."
+variable "image" {
+  description = "Container image to run. Changing it rolls the gateway (ECS) or replaces the instance (EC2)."
   type        = string
+  default     = "ghcr.io/solcreek/sftp-s3:0.1"
+}
+
+variable "users" {
+  description = <<-EOT
+    SFTP_USERS entries, one per element: "name:<authorized_keys line>",
+    "name:<bcrypt hash>" (sftp-s3 -hash-password) or "name:<password>".
+    Stored in the state. null: manage /<name>/users yourself (see README).
+  EOT
+  type        = list(string)
+  default     = null
+}
+
+variable "generate_host_key" {
+  description = "Generate the SSH host key here (it is then in the state). false: write /<name>/host-key yourself."
+  type        = bool
+  default     = true
 }
 
 variable "max_connections" {
@@ -127,28 +138,4 @@ variable "vpc_cidr" {
   description = "CIDR of the stack's VPC; two /24 public subnets are carved from it."
   type        = string
   default     = "10.77.0.0/16"
-}
-
-# ---------- CI ----------
-
-variable "github_repository" {
-  description = "owner/repo allowed to deploy through GitHub Actions OIDC from its main branch; null skips the deploy role."
-  type        = string
-  default     = null
-}
-
-variable "github_sub_prefix" {
-  description = <<-EOT
-    Prefix of the OIDC token's `sub` claim; null means "repo:<github_repository>".
-    Repositories with immutable subjects use "repo:owner@<id>/repo@<id>"; read it
-    with `gh api repos/OWNER/REPO/actions/oidc/customization/sub` (sub_claim_prefix).
-  EOT
-  type        = string
-  default     = null
-}
-
-variable "github_oidc_provider_exists" {
-  description = "The account already has the token.actions.githubusercontent.com OIDC provider (only one may exist)."
-  type        = bool
-  default     = true
 }

@@ -1,9 +1,9 @@
 # compute = "ec2": one Graviton instance with a fixed address, the
 # container on port 22, and no sshd (administration is SSM Session Manager).
 #
-# Deploys: CI writes the new image to the /<name>/image parameter and runs
-# `systemctl restart sftp-s3` through SSM. The restart stops new logins and
-# gives open sessions up to 120 s to finish.
+# Deploys: changing `image`, managed users or the host key replaces the
+# instance (the Elastic IP moves to the new one), so expect a few minutes
+# of downtime. This shape trades availability for cost; use ECS otherwise.
 
 locals {
   ec2 = var.compute == "ec2" ? 1 : 0
@@ -62,8 +62,9 @@ resource "aws_instance" "this" {
   }
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/ec2-user-data.sh", {
-    region          = var.region
-    registry        = split("/", aws_ecr_repository.this.repository_url)[0]
+    region          = local.region
+    image           = var.image
+    config_hash     = local.config_hash
     param_prefix    = "/${var.name}"
     bucket          = local.bucket
     s3_prefix       = var.s3_prefix

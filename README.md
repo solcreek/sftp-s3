@@ -120,8 +120,12 @@ are immutable), symlinks, and `statvfs`.
 
 ## Deploying
 
-- **AWS:** OpenTofu for ECS Fargate behind an NLB, or a single EC2 instance,
-  in [deploy/aws](deploy/aws/README.md).
+- **Docker Compose**, locally with an S3-compatible store:
+  [examples/compose](examples/compose/README.md).
+- **Kubernetes** (EKS, GKE, AKS, …): [examples/kubernetes](examples/kubernetes/README.md).
+- **AWS:** an OpenTofu / Terraform module for ECS Fargate behind an NLB, or a
+  single EC2 instance: [deploy/aws](deploy/aws/README.md), with a runnable
+  [example](examples/aws).
 - **Fly.io:** [fly.toml](fly.toml).
 - **Other platforms**, and the things every deployment needs:
   [docs/hosting.md](docs/hosting.md).

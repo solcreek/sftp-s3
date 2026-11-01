@@ -1,10 +1,8 @@
 # compute = "ecs": Fargate tasks in two AZs behind a network load balancer.
 #
-# Deploys: CI registers a new revision of the task definition with a new
-# image and points the service at it. The service ignores task_definition
-# changes so `tofu apply` never rolls an older image back; a revision that
-# apply creates (e.g. a changed environment variable) goes live with the
-# next CI deploy, which copies the newest revision.
+# Deploys: change `image` (or users / settings) and apply. That registers a
+# new task definition revision and the service rolls to it; open sessions
+# on old tasks get the NLB's 120 s drain plus up to 120 s after SIGTERM.
 
 locals {
   ecs = var.compute == "ecs" ? 1 : 0
@@ -69,26 +67,29 @@ resource "aws_ecs_task_definition" "this" {
   }
   container_definitions = jsonencode([{
     name         = "sftp-s3"
-    image        = "${aws_ecr_repository.this.repository_url}:${var.image_tag}"
+    image        = var.image
     essential    = true
     portMappings = [{ containerPort = 2222, protocol = "tcp" }]
     stopTimeout  = 120 # Fargate's maximum: open sessions get this long after SIGTERM
     environment = [
       { name = "PORT", value = "2222" },
-      { name = "AWS_REGION", value = var.region },
+      { name = "AWS_REGION", value = local.region },
       { name = "S3_BUCKET", value = local.bucket },
       { name = "S3_PREFIX", value = var.s3_prefix },
       { name = "SFTP_MAX_CONNECTIONS", value = tostring(local.ecs_max_connections) },
+      # Not read by the gateway: a new value makes a new revision, so that
+      # changed users or host key reach the tasks.
+      { name = "SFTP_S3_CONFIG_HASH", value = substr(local.config_hash, 0, 16) },
     ]
     secrets = [
-      { name = "SFTP_USERS", valueFrom = aws_ssm_parameter.runtime["users"].arn },
-      { name = "SFTP_HOST_KEY", valueFrom = aws_ssm_parameter.runtime["host-key"].arn },
+      { name = "SFTP_USERS", valueFrom = local.users_param.arn },
+      { name = "SFTP_HOST_KEY", valueFrom = local.host_key_param.arn },
     ]
     logConfiguration = {
       logDriver = "awslogs"
       options = {
         awslogs-group         = aws_cloudwatch_log_group.ecs[0].name
-        awslogs-region        = var.region
+        awslogs-region        = local.region
         awslogs-stream-prefix = "ecs"
       }
     }
@@ -206,9 +207,6 @@ resource "aws_ecs_service" "this" {
     target_group_arn = aws_lb_target_group.this[0].arn
     container_name   = "sftp-s3"
     container_port   = 2222
-  }
-  lifecycle {
-    ignore_changes = [task_definition]
   }
   depends_on = [aws_lb_listener.this]
 }

@@ -1,0 +1,9 @@
+region        = "us-east-1"            # the bucket's region
+compute       = "ecs"                  # or "ec2"
+bucket_name   = "my-sftp-uploads"
+create_bucket = true                   # false: an existing bucket, see deploy/aws/README.md
+allowed_cidrs = ["203.0.113.0/24"]     # who may connect to port 22
+users = [
+  "alice:ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... alice@laptop",
+  "bob:$2a$10$...",                    # sftp-s3 -hash-password
+]

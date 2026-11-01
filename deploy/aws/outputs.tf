@@ -8,32 +8,22 @@ output "public_ips" {
   value       = var.compute == "ecs" ? aws_eip.nlb[*].public_ip : aws_eip.ec2[*].public_ip
 }
 
-output "ecr_repository" {
-  value = aws_ecr_repository.this.repository_url
+output "host_key_fingerprint" {
+  description = "SHA256 fingerprint clients see on first connect (generated host key only)."
+  value       = var.generate_host_key ? tls_private_key.host[0].public_key_fingerprint_sha256 : null
+}
+
+output "known_hosts" {
+  description = "Lines for ~/.ssh/known_hosts, so clients can pin the host key (generated host key only)."
+  value = var.generate_host_key ? join("\n", [
+    for addr in concat([var.compute == "ecs" ? aws_lb.this[0].dns_name : aws_eip.ec2[0].public_ip], var.compute == "ecs" ? aws_eip.nlb[*].public_ip : []) :
+    "${addr} ${trimspace(tls_private_key.host[0].public_key_openssh)}"
+  ]) : null
 }
 
 output "parameters" {
-  description = "Set users and host-key with `aws ssm put-parameter --overwrite` (see README.md)."
-  value       = { for k, p in aws_ssm_parameter.runtime : k => p.name }
-}
-
-output "github_deploy_role_arn" {
-  description = "Repository variable AWS_DEPLOY_ROLE_ARN for .github/workflows/deploy.yml."
-  value       = one(aws_iam_role.github_deploy[*].arn)
-}
-
-output "deploy_variables" {
-  description = "Repository variables the deploy workflow reads."
-  value = {
-    AWS_REGION      = var.region
-    DEPLOY_COMPUTE  = var.compute
-    ECR_REPOSITORY  = aws_ecr_repository.this.repository_url
-    ECS_CLUSTER     = one(aws_ecs_cluster.this[*].name)
-    ECS_SERVICE     = one(aws_ecs_service.this[*].name)
-    ECS_FAMILY      = one(aws_ecs_task_definition.this[*].family)
-    EC2_INSTANCE_ID = one(aws_instance.this[*].id)
-    IMAGE_PARAMETER = aws_ssm_parameter.runtime["image"].name
-  }
+  description = "SSM parameters the gateway reads at start."
+  value       = { users = local.users_param.name, host_key = local.host_key_param.name }
 }
 
 output "bucket_policy_statement" {
