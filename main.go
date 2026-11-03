@@ -59,7 +59,12 @@ func main() {
 	if done {
 		os.Exit(code)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, nil)))
+	logger, err := newLogger(os.Getenv, os.Stderr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "sftp-s3:", err)
+		os.Exit(1)
+	}
+	slog.SetDefault(logger)
 	if check {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
