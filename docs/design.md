@@ -119,6 +119,48 @@ The events and their attributes are listed in the
   waits for every channel of the connection, so it comes after the
   connection's transfer events.
 
+## Metrics and health
+
+The metrics are listed in the
+[README](../README.md#metrics-and-health). How they are produced:
+
+- **No new dependency.** `prometheus/client_golang` (its `prometheus` and
+  `promhttp` packages) would compile 7 new modules into the binary
+  (`client_golang`, `client_model`, `common`, `beorn7/perks`, `xxhash`,
+  `munnerz/goautoneg`, `google.golang.org/protobuf`) and put 32 modules in
+  `go.mod`'s graph (measured 2026-11-03 with `go list`), for a handful of
+  counters. The gateway writes the text exposition
+  format (0.0.4) itself, counters and gauges only, with no histograms, in
+  about 150 lines. A test parses the output (HELP and TYPE lines, sample
+  lines, label escaping) so the format cannot drift unnoticed.
+- **Counted where the audit events are logged.** `audit()` is the one
+  function every audit event goes through; it hands the event and its
+  attributes to the counters before logging. Logins, failed logins, file
+  operations and bytes therefore cannot disagree with the audit log, and a
+  test checks that they agree after a scripted session. Only connection
+  accounting (accepted, rejected by the limit or a ban), which has no audit
+  event, is counted in `Serve` and `handleConn`, and bans in the limiter.
+- **Fixed label sets.** Label values come from fixed lists (`method`,
+  `reason`, `op`, `result`); a value outside them counts as `other`. Nothing
+  the client chooses (user names, keys, addresses, error texts) becomes a
+  label, so a client cannot grow the number of series, and no secret can
+  reach a metric. Every series is written from the start, at zero.
+- **Atomics, no locks on the hot path.** Counters are `atomic.Int64` in
+  fixed arrays indexed by label. The banned-clients gauge and the open
+  connections are read at scrape time (the limiter's lock, the length of
+  the connection-slot channel), not maintained on every connection.
+- **A separate, optional listener.** HTTP never shares the SFTP port, so a
+  scan of port 22 sees only SSH, and an HTTP bug cannot reach the SSH
+  listener. Off by default: a deployment that does not ask for it has no
+  HTTP surface at all. It has read, write and idle timeouts and a header
+  size cap, and serves only `GET`/`HEAD` on two paths.
+- **Health is "accepting connections".** `Server.Serving` turns false when
+  `Serve`'s listener closes, before it waits for open sessions, so
+  `/healthz` reports 503 for the whole drain while the HTTP listener keeps
+  running until the process exits. It does not probe S3: per-probe cost and
+  latency, and an S3 outage would fail every replica's check at once and
+  empty the load balancer, which helps no one.
+
 ## Why Go (decision record)
 
 A Rust prototype (`russh` 0.65 + `russh-sftp` 3.0 + `aws-sdk-s3`) was built
