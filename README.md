@@ -414,6 +414,26 @@ and ignored).
 Not supported: random-access writes such as resuming an upload (S3 objects
 are immutable), symlinks, and `statvfs`.
 
+### Clients
+
+| client | result | verified |
+|---|---|---|
+| OpenSSH `sftp` (macOS, Linux) | password and key login; every operation above | 2026-11-02, against AWS S3, GCS, R2 and S3-compatible stores |
+| WinSCP 6 (`winscp.com` scripting, Windows 11) | password login (the server offers `password,publickey`; WinSCP needs no keyboard-interactive); upload of 20 MiB through `.filepart` and rename, download with matching MD5, mkdir, move, rm, rmdir | 2026-11-03, against AWS S3 (ap-northeast-1) |
+| FileZilla | not yet verified | |
+
+WinSCP and FileZilla upload large files to `name.filepart` and rename it
+when done, which copies the object once more in S3; turning off
+"transfer to temporary filename" avoids that.
+
+The server answers a file's close only once S3 has the whole object, so a
+client sees a pause at 100% while the gateway sends what it still holds
+(up to about 96 MiB: the reorder buffer plus the parts in flight). Next to
+the bucket that takes well under a second. Far from it, the pause grows:
+from a host with about 1.2 MB/s to S3, WinSCP waited 15 s after a 20 MiB
+upload and showed "Host is not communicating for more than 15 seconds",
+then finished normally. Run the gateway in the bucket's region.
+
 ## Deploying
 
 - **Docker Compose**, locally with an S3-compatible store:
