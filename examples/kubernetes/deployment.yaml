@@ -7,6 +7,14 @@ spec:
   selector:
     matchLabels: {}
   template:
+    metadata:
+      # For a Prometheus that discovers pods by annotation. /metrics has no
+      # authentication: the port is reachable inside the cluster only (the
+      # Service does not expose it); add a NetworkPolicy to narrow that.
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /metrics
     spec:
       serviceAccountName: sftp-s3
       # On SIGTERM the server stops accepting and waits for open sessions;
@@ -32,6 +40,9 @@ spec:
           ports:
             - name: sftp
               containerPort: 2222
+            # /healthz and /metrics; not in service.yaml, so not public.
+            - name: http
+              containerPort: 9090
           envFrom:
             - configMapRef:
                 name: sftp-s3
@@ -46,14 +57,23 @@ spec:
               value: /config/users
             - name: SFTP_HOST_KEY_FILE
               value: /config/host_key
+            - name: SFTP_METRICS_ADDR
+              value: ":9090"
           volumeMounts:
             - name: config
               mountPath: /config
               readOnly: true
+          # Ready means accepting SFTP connections: /healthz turns 503 as
+          # soon as SIGTERM arrives, while open sessions drain. It does not
+          # call S3, so a store outage does not empty the Service.
           readinessProbe:
-            tcpSocket:
-              port: sftp
-            periodSeconds: 10
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+            failureThreshold: 1
+          # Liveness stays a TCP check on the SFTP port: it must keep passing
+          # during the drain, or the kubelet would kill uploads in flight.
           livenessProbe:
             tcpSocket:
               port: sftp
