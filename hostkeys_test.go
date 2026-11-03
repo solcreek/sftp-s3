@@ -11,9 +11,13 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"log/slog"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/johannesboyne/gofakes3"
+	"github.com/johannesboyne/gofakes3/backend/s3mem"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -192,6 +196,52 @@ func TestLoadConfigHostKeys(t *testing.T) {
 	for i, k := range want {
 		if !bytes.Equal(cfg.HostKeys[i].PublicKey().Marshal(), k.pub.Marshal()) {
 			t.Errorf("host key %d is not the one supplied", i+1)
+		}
+	}
+}
+
+// Operators compare these with what clients have pinned, so every key is
+// shown with its type, in -check output and in the startup log.
+func TestHostKeyFingerprints(t *testing.T) {
+	isolateAWS(t)
+	backend := s3mem.New()
+	if err := backend.CreateBucket("uploads"); err != nil {
+		t.Fatal(err)
+	}
+	store := httptest.NewServer(gofakes3.New(backend).Server())
+	t.Cleanup(store.Close)
+	ed, ec, _, rs := newKeys(t)
+	keys := []hostKeyPair{openssh(t, ed), openssh(t, ec), legacy(t, rs)}
+	env := map[string]string{
+		"S3_BUCKET":     "uploads",
+		"S3_ENDPOINT":   store.URL,
+		"SFTP_USERS":    "alice:pw",
+		"SFTP_HOST_KEY": keys[0].pem + keys[1].pem + keys[2].pem,
+		"PORT":          "0",
+	}
+
+	var out strings.Builder
+	if err := runCheck(context.Background(), envMap(env), &out); err != nil {
+		t.Fatalf("check failed: %v\n%s", err, out.String())
+	}
+	var logs bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := run(ctx, envMap(env)); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, k := range keys {
+		line := "host key: " + k.pub.Type() + " " + ssh.FingerprintSHA256(k.pub) + "\n"
+		if !strings.Contains(out.String(), line) {
+			t.Errorf("-check output lacks %q:\n%s", line, out.String())
+		}
+		attrs := `msg="host key" type=` + k.pub.Type() + " fingerprint=" + ssh.FingerprintSHA256(k.pub)
+		if !strings.Contains(logs.String(), attrs) {
+			t.Errorf("startup log lacks %q:\n%s", attrs, logs.String())
 		}
 	}
 }

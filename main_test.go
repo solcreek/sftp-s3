@@ -288,7 +288,7 @@ func TestRunCheck(t *testing.T) {
 	if err := runCheck(context.Background(), envMap(env), &out); err != nil {
 		t.Fatalf("check failed: %v\n%s", err, out.String())
 	}
-	for _, want := range []string{"users: 2 (1 keys, 0 hashed passwords, 1 plaintext passwords)", "host key: SHA256:", "bucket: uploads reachable", "ok"} {
+	for _, want := range []string{"users: 2 (1 keys, 0 hashed passwords, 1 plaintext passwords)", "host key: ssh-ed25519 SHA256:", "bucket: uploads reachable", "ok"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output lacks %q:\n%s", want, out.String())
 		}
