@@ -48,7 +48,7 @@ jobs:
       ISSUER: https://token.actions.githubusercontent.com
     steps:
       - uses: sigstore/cosign-installer@v3
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-qemu-action@v4
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
