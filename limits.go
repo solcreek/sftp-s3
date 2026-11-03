@@ -11,6 +11,10 @@ import (
 // loadLoginLimits applies SFTP_BAN_THRESHOLD (0 turns bans off),
 // SFTP_BAN_WINDOW, SFTP_BAN_DURATION, SFTP_BAN_MAX_DURATION and
 // SFTP_MAX_AUTH_TRIES to cfg. Unset variables keep the gateway defaults.
+// maxBanSetting bounds the ban durations: longer ones are more likely typos
+// than intent, and doubling a bounded ban cannot overflow.
+const maxBanSetting = 30 * 24 * time.Hour
+
 func loadLoginLimits(getenv func(string) string, cfg *gateway.Config) error {
 	if v := getenv("SFTP_BAN_THRESHOLD"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -32,8 +36,8 @@ func loadLoginLimits(getenv func(string) string, cfg *gateway.Config) error {
 			continue
 		}
 		var err error
-		if *d, err = time.ParseDuration(v); err != nil || *d < time.Second {
-			return fmt.Errorf("%s: %q must be a duration of at least 1s, like 10m or 24h", name, v)
+		if *d, err = time.ParseDuration(v); err != nil || *d < time.Second || *d > maxBanSetting {
+			return fmt.Errorf("%s: %q must be a duration from 1s to 30 days (720h), like 10m or 24h", name, v)
 		}
 	}
 	if v := getenv("SFTP_MAX_AUTH_TRIES"); v != "" {
