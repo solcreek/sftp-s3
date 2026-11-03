@@ -88,6 +88,7 @@ type Server struct {
 	bans   *limiter // nil when bans are off
 
 	metrics metrics
+	serving atomic.Bool // Serve is accepting connections
 }
 
 // New validates cfg and builds a Server. It needs at least one host key and
@@ -163,10 +164,17 @@ func (s *Server) SetUsers(users map[string]User) error {
 
 func (s *Server) currentUsers() map[string]User { return *s.users.Load() }
 
+// Serving reports whether Serve is accepting connections: false before
+// it starts, and from the moment ln is closed (shutdown has begun) while
+// open sessions drain.
+func (s *Server) Serving() bool { return s.serving.Load() }
+
 // Serve accepts connections until ln is closed, then waits for open
 // sessions to finish. It returns nil when ln was closed.
 func (s *Server) Serve(ln net.Listener) error {
 	defer s.wg.Wait()
+	s.serving.Store(true)
+	defer s.serving.Store(false) // runs before the wait above
 	var rejected int
 	var lastWarn time.Time
 	for {

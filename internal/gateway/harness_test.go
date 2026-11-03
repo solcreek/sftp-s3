@@ -41,6 +41,7 @@ type env struct {
 	srv    *Server
 	s3     *s3.Client
 	addr   string
+	ln     net.Listener
 	hostPK ssh.PublicKey
 	seen   *headerLog // request headers the store received; in-memory store only
 	bucket string
@@ -102,7 +103,7 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 		})
 	}
 	t.Cleanup(stop)
-	return &env{t: t, srv: srv, s3: client, addr: ln.Addr().String(), hostPK: signer.PublicKey(), seen: seen, bucket: bucket, base: base, stop: stop}
+	return &env{t: t, srv: srv, s3: client, addr: ln.Addr().String(), ln: ln, hostPK: signer.PublicKey(), seen: seen, bucket: bucket, base: base, stop: stop}
 }
 
 func (e *env) sshDial(user, pass string) (*ssh.Client, error) {
