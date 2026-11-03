@@ -350,6 +350,22 @@ func TestConvertSFTPGo(t *testing.T) {
 			warn: []string{`skipped user "ftponly": SFTP (protocol SSH) is denied in SFTPGo`},
 		},
 		{
+			// The gateway has no second factor: a user who needs one over
+			// SSH would lose it, so they are skipped.
+			name: "second factor",
+			users: []string{
+				s3User("totp", `"filters": {"totp_config": {"enabled": true, "config_name": "Default", "protocols": ["SSH", "HTTP"], "secret": {}}}`),
+				s3User("required", `"filters": {"two_factor_protocols": ["SSH"]}`),
+				s3User("webtotp", `"filters": {"totp_config": {"enabled": true, "protocols": ["HTTP"]}, "two_factor_protocols": ["HTTP"]}`),
+				s3User("off", `"filters": {"totp_config": {"enabled": false, "protocols": ["SSH"]}}`),
+			},
+			want: map[string]string{"webtotp": `"webtotp"`, "off": `"off"`},
+			warn: []string{
+				`skipped user "totp": two-factor authentication over SSH is required in SFTPGo`,
+				`skipped user "required": two-factor authentication over SSH is required in SFTPGo`,
+			},
+		},
+		{
 			// A login method SFTPGo denies is kept denied by not copying
 			// its credential; a user left with none is skipped.
 			name: "denied login methods",

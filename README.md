@@ -158,7 +158,8 @@ SFTP_USERS_FILE=users.json S3_REGION=... sftp-s3 -check
 - An empty `key_prefix` (the bucket root in SFTPGo) is written as
   `"prefix": ""`, so the user stays at the bucket root.
 - Skipped, with a message: disabled users, users denied the SSH protocol
-  (`denied_protocols`), users on a provider other than S3, and users left with neither a bcrypt password nor a public key.
+  (`denied_protocols`), users with two-factor authentication over SSH
+  (the gateway has no second factor), users on a provider other than S3, and users left with neither a bcrypt password nor a public key.
   Passwords hashed another way (argon2id, PBKDF2, ...) are dropped with a
   warning; set a new one with `sftp-s3 -hash-password`.
 - Login methods denied in SFTPGo (`denied_login_methods`) stay denied: the
