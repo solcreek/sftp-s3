@@ -227,14 +227,14 @@ operation logs exactly one event. Every event also has:
 |---|---|
 | `session` | random id of the connection (16 hex digits); joins all events of one connection |
 | `remote` | client address, `ip:port` (the PROXY protocol's when `SFTP_PROXY_PROTOCOL=on`) |
-| `user` | login name, as the client sent it |
+| `user` | login name, as the client sent it; in `login_failed`, cut to 64 bytes with the original length noted |
 
 | `audit` | when | other attributes |
 |---|---|---|
 | `login` | a client logged in | `method` (`password` or `publickey`), `fingerprint` (SHA256 of the key, for `publickey`), `bucket`, `root` (key prefix of the user's files) |
 | `login_failed` | a wrong password; a connection that tried to log in and closed without succeeding or sending a wrong password; a login refused because the client was banned meanwhile | `method` (`password`, `publickey`, or the methods tried, comma-separated), `reason` (`wrong password`, `unknown user`, `no accepted key`, `no accepted method`, `banned`) |
 | `upload` | the S3 upload completed or was aborted: on close, or when the client went away | `bucket`, `key`, `bytes`, `duration_ms`, `result`, `error` |
-| `download` | the file was closed, or the client went away | `bucket`, `key`, `bytes` (sent to the client), `duration_ms`, `result`, `error` |
+| `download` | the file was closed, or the client went away | `bucket`, `key`, `bytes` (sent to the client; ranges read again count again, so it can exceed the object size), `duration_ms`, `result`, `error` |
 | `mkdir`, `rmdir` | | `bucket`, `key` (the `dir/` marker), `result`, `error` |
 | `remove`, `setstat` | | `bucket`, `key`, `result`, `error` |
 | `rename` | | `bucket`, `from`, `to` (keys), `result`, `error` |
@@ -244,14 +244,16 @@ operation logs exactly one event. Every event also has:
 error's text (from S3, the SFTP stream or the server, never a credential).
 An upload or download refused at open (a missing file, the root directory)
 logs `failed` at once with `bytes` 0. A failed upload's `bytes` counts what
-reached S3 before it failed.
+was received from the client before it failed; an aborted upload leaves
+nothing in S3.
 
 A client offering several keys logs one `login_failed` for the connection,
 not one per key, just as [bans](#failed-login-bans) count it. Connections
 refused before the SSH handshake because their client is banned, and
 connections that never try to log in (health checks), are not audit
 events. Listings and stats are not logged. Passwords, password hashes,
-private keys and S3 credentials are never logged.
+private keys and S3 credentials are not logged, with the same caveat as
+sshd: a password typed into the user name field is logged as a user name.
 
 An upload in JSON:
 
