@@ -6,6 +6,15 @@ break configuration.
 
 ## Unreleased
 
+- Clients that fail to log in too often are banned before the SSH
+  handshake. A client is an IPv4 address or an IPv6 /64; by default 10
+  failures in 10 minutes ban it for 15 minutes, doubling on repeat bans up
+  to 24 hours. Health checks and connections that never try to log in are
+  not counted. Settings: `SFTP_BAN_THRESHOLD` (`0` turns bans off),
+  `SFTP_BAN_WINDOW`, `SFTP_BAN_DURATION`, `SFTP_BAN_MAX_DURATION`. Bans are
+  per process, need real client IPs, and ban everyone behind a shared NAT
+  address (see README). **On by default.**
+- `SFTP_MAX_AUTH_TRIES` sets the login attempts per connection (default 6).
 - SIGHUP reloads the users from `SFTP_USERS_FILE` without dropping
   sessions; an invalid file is logged and the current users stay. Open
   sessions keep the bucket and prefix they authenticated with, even when
