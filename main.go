@@ -7,9 +7,6 @@ package main
 import (
 	"bufio"
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -281,11 +278,9 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 	if err != nil {
 		return cfg, err
 	}
-	hk, err := hostKey(key)
-	if err != nil {
+	if cfg.HostKeys, err = hostKeys(key); err != nil {
 		return cfg, err
 	}
-	cfg.HostKeys = []ssh.Signer{hk}
 	if mb := getenv("S3_PART_SIZE_MB"); mb != "" {
 		n, err := strconv.Atoi(mb)
 		if err != nil || n < 5 || n > 5120 {
@@ -320,27 +315,4 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 	slog.Info("s3", "endpoint", orDefault(st.Endpoint, "aws"), "region", st.Region,
 		"path_style", st.PathStyle, "checksum", st.Checksum)
 	return cfg, nil
-}
-
-// hostKey parses a PEM private key, or generates an ephemeral ed25519 key when
-// pemData is empty. Production must pin a key: an ephemeral one changes on
-// every deploy and clients refuse to connect ("HOST IDENTIFICATION HAS CHANGED").
-func hostKey(pemData string) (ssh.Signer, error) {
-	if pemData != "" {
-		s, err := ssh.ParsePrivateKey([]byte(pemData))
-		if err != nil {
-			return nil, fmt.Errorf("SFTP_HOST_KEY: %w", err)
-		}
-		return s, nil
-	}
-	slog.Warn("SFTP_HOST_KEY not set; generating an ephemeral ed25519 host key")
-	_, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, err
-	}
-	blk, err := ssh.MarshalPrivateKey(priv, "")
-	if err != nil {
-		return nil, err
-	}
-	return ssh.ParsePrivateKey(pem.EncodeToMemory(blk))
 }

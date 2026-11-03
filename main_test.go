@@ -58,33 +58,6 @@ func testKeyPEM(t *testing.T) (string, ssh.PublicKey) {
 	return string(pem.EncodeToMemory(blk)), sshPub
 }
 
-func TestHostKey(t *testing.T) {
-	keyPEM, pub := testKeyPEM(t)
-	s, err := hostKey(keyPEM)
-	if err != nil {
-		t.Fatalf("hostKey(valid PEM): %v", err)
-	}
-	if string(s.PublicKey().Marshal()) != string(pub.Marshal()) {
-		t.Fatal("hostKey returned a different key than the one supplied")
-	}
-
-	if _, err := hostKey("not a key"); err == nil || !strings.Contains(err.Error(), "SFTP_HOST_KEY") {
-		t.Fatalf("hostKey(garbage) = %v, want an SFTP_HOST_KEY error", err)
-	}
-
-	a, err := hostKey("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := hostKey("")
-	if a.PublicKey().Type() != ssh.KeyAlgoED25519 {
-		t.Fatalf("ephemeral key type %s, want ed25519", a.PublicKey().Type())
-	}
-	if string(a.PublicKey().Marshal()) == string(b.PublicKey().Marshal()) {
-		t.Fatal("two ephemeral keys are identical")
-	}
-}
-
 func TestLoadConfig(t *testing.T) {
 	isolateAWS(t)
 	keyPEM, pub := testKeyPEM(t)
