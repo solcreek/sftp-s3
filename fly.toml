@@ -34,6 +34,7 @@ kill_timeout = 120
   # Fly's proxy prepends a PROXY protocol header (handlers below), so the
   # logs show client addresses instead of the proxy's.
   SFTP_PROXY_PROTOCOL = "on"
+  SFTP_LOG_FORMAT = "json"
 
 [[services]]
   internal_port = 2222
