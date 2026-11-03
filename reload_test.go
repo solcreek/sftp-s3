@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/crypto/ssh"
@@ -144,5 +145,17 @@ func TestLogReload(t *testing.T) {
 		if !strings.Contains(logs.String(), tc.want) {
 			t.Errorf("log = %q, want it to contain %q", logs, tc.want)
 		}
+	}
+}
+
+// waitFor polls cond until it holds, for up to 10 s.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("timed out")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

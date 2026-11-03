@@ -116,14 +116,3 @@ func TestRunReloadsUsersOnSIGHUP(t *testing.T) {
 	}
 	alice.Close()
 }
-
-func waitFor(t *testing.T, cond func() bool) {
-	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
-	for !cond() {
-		if time.Now().After(deadline) {
-			t.Fatal("timed out")
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-}
