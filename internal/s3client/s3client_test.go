@@ -13,6 +13,8 @@ import (
 func isolate(t *testing.T, region string) {
 	t.Setenv("AWS_CONFIG_FILE", os.DevNull)
 	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", os.DevNull)
+	t.Setenv("AWS_PROFILE", "") // a profile would point at the hidden config files
+	t.Setenv("AWS_DEFAULT_PROFILE", "")
 	t.Setenv("AWS_REGION", region)
 	t.Setenv("AWS_DEFAULT_REGION", "")
 	t.Setenv("AWS_ACCESS_KEY_ID", "test")

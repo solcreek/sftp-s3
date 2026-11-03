@@ -32,6 +32,8 @@ func TestMain(m *testing.M) {
 func isolateAWS(t *testing.T) {
 	t.Setenv("AWS_CONFIG_FILE", os.DevNull)
 	t.Setenv("AWS_SHARED_CREDENTIALS_FILE", os.DevNull)
+	t.Setenv("AWS_PROFILE", "") // a profile would point at the hidden config files
+	t.Setenv("AWS_DEFAULT_PROFILE", "")
 	t.Setenv("AWS_REGION", "us-east-1")
 	t.Setenv("AWS_ACCESS_KEY_ID", "test")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "test")
