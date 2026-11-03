@@ -6,6 +6,12 @@ break configuration.
 
 ## Unreleased
 
+- `sftp-s3 import-sftpgo <dump.json>` converts the users of an SFTPGo JSON
+  data dump to a JSON users file: bcrypt hashes, public keys, bucket and key
+  prefix, with a warning for every setting it cannot carry over. Login
+  methods denied in SFTPGo stay denied; users SFTPGo would not let in over
+  SFTP (disabled, expired, SSH denied, two-factor over SSH) are skipped. It
+  never reads the S3 secrets in the dump.
 - A JSON users format (`SFTP_USERS` / `SFTP_USERS_FILE` starting with `{`)
   that gives each user their own bucket and prefix, including a bucket
   root. `S3_BUCKET` is optional when every user names a bucket, and
