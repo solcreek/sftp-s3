@@ -7,8 +7,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/johannesboyne/gofakes3"
 	"github.com/johannesboyne/gofakes3/backend/s3mem"
@@ -339,6 +341,22 @@ func TestConvertSFTPGo(t *testing.T) {
 			},
 			want: map[string]string{"ok": `"username": "ok"`},
 			warn: []string{`skipped user "g": storage provider 2 is not S3`},
+		},
+		{
+			// SFTPGo refuses login once expiration_date (ms since the
+			// epoch) has passed; a future date is only warned about.
+			name: "expired",
+			users: []string{
+				s3User("old", `"expiration_date": 1000`),
+				s3User("lastyear", `"expiration_date": `+strconv.FormatInt(time.Now().AddDate(-1, 0, 0).UnixMilli(), 10)),
+				s3User("later", `"expiration_date": `+strconv.FormatInt(time.Now().AddDate(1, 0, 0).UnixMilli(), 10)),
+			},
+			want: map[string]string{"later": `"later"`},
+			warn: []string{
+				`skipped user "old": expired in SFTPGo`,
+				`skipped user "lastyear": expired in SFTPGo`,
+				`user "later": expiration date not carried over`,
+			},
 		},
 		{
 			name: "SSH denied",

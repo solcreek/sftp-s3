@@ -157,7 +157,8 @@ SFTP_USERS_FILE=users.json S3_REGION=... sftp-s3 -check
 - Only the JSON dump is read; SFTPGo's SQLite (or other) database is not.
 - An empty `key_prefix` (the bucket root in SFTPGo) is written as
   `"prefix": ""`, so the user stays at the bucket root.
-- Skipped, with a message: disabled users, users denied the SSH protocol
+- Skipped, with a message: disabled users, users whose expiration date
+  has passed, users denied the SSH protocol
   (`denied_protocols`), users with two-factor authentication over SSH
   (the gateway has no second factor), users on a provider other than S3, and users left with neither a bcrypt password nor a public key.
   Passwords hashed another way (argon2id, PBKDF2, ...) are dropped with a
@@ -167,7 +168,7 @@ SFTP_USERS_FILE=users.json S3_REGION=... sftp-s3 -check
   denied, nor are the public keys when `publickey` is, each with a warning.
 - Imported, with a warning, but without: virtual folders, quotas, IP
   filters, permissions other than full access, group settings, and
-  expiration dates.
+  expiration dates still in the future.
 - All users share one region, endpoint and set of credentials (`S3_REGION`,
   `S3_ENDPOINT`, the AWS default chain). Users whose region or endpoint
   differs from the others are named in a warning. The S3 keys stored in
