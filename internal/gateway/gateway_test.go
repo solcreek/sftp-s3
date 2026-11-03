@@ -393,6 +393,14 @@ func TestUsersOnTheirOwnBuckets(t *testing.T) {
 		"RemoveDirectory /": func() error { return carol.RemoveDirectory("/") },
 		"Rename / to /y":    func() error { return carol.Rename("/", "/y") },
 		"Rename to /":       func() error { return carol.Rename("/x.txt", "/") },
+		"Open / to read": func() error {
+			f, err := carol.Open("/")
+			if err == nil {
+				_, err = f.Read(make([]byte, 1))
+				f.Close()
+			}
+			return err
+		},
 		"Create /": func() error {
 			f, err := carol.Create("/")
 			if err == nil {
