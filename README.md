@@ -302,7 +302,7 @@ port, or if the address is not `host:port` with a numeric port.
 | `sftp_s3_logins_total` | counter | `method`: `password`, `publickey`, `other` | `login` events |
 | `sftp_s3_login_failures_total` | counter | `reason`: `unknown user`, `wrong password`, `banned`, `no accepted method`, `no accepted key`, `other` | `login_failed` events |
 | `sftp_s3_operations_total` | counter | `op`: `upload`, `download`, `mkdir`, `remove`, `rmdir`, `rename`, `setstat`; `result`: `ok`, `failed` | file operation events |
-| `sftp_s3_bytes_received_total` | counter | | upload payload bytes (the `bytes` of `upload` events), counted when each upload ends |
+| `sftp_s3_bytes_received_total` | counter | | upload payload bytes (the `bytes` of `upload` events), counted when each upload ends, failed uploads included |
 | `sftp_s3_bytes_sent_total` | counter | | download payload bytes (the `bytes` of `download` events), counted when each download ends |
 | `sftp_s3_bans_total` | counter | | clients banned (see [Failed-login bans](#failed-login-bans)) |
 | `sftp_s3_banned_clients` | gauge | | clients (IPv4 addresses or IPv6 /64s) banned now |
