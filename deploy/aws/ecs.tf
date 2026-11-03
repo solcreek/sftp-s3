@@ -77,6 +77,7 @@ resource "aws_ecs_task_definition" "this" {
       { name = "S3_BUCKET", value = local.bucket },
       { name = "S3_PREFIX", value = var.s3_prefix },
       { name = "SFTP_MAX_CONNECTIONS", value = tostring(local.ecs_max_connections) },
+      { name = "SFTP_LOG_FORMAT", value = "json" }, # CloudWatch Logs parses the fields
       # Not read by the gateway: a new value makes a new revision, so that
       # changed users or host key reach the tasks.
       { name = "SFTP_S3_CONFIG_HASH", value = substr(local.config_hash, 0, 16) },

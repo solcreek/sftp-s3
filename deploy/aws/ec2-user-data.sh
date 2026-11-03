@@ -24,6 +24,7 @@ docker rm -f sftp-s3 2>/dev/null || true
 exec docker run --rm --name sftp-s3 -p 22:2222 \
   -e PORT=2222 -e AWS_REGION=${region} \
   -e S3_BUCKET=${bucket} -e S3_PREFIX=${s3_prefix} -e SFTP_MAX_CONNECTIONS=${max_connections} \
+  -e SFTP_LOG_FORMAT=json \
   -e SFTP_USERS="$(p users)" -e SFTP_HOST_KEY="$(p host-key)" \
   "$image"
 EOF
