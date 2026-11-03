@@ -86,6 +86,39 @@ result of a real failure:
   for old clients, `ssh-rsa` (SHA-1), as `golang.org/x/crypto/ssh` does by
   default.
 
+## Audit log
+
+The events and their attributes are listed in the
+[README](../README.md#audit-log). How they are produced:
+
+- **Plain slog records.** An audit event is an info-level record whose
+  message is the event name and which carries `audit=<event>`; there is no
+  separate audit sink. `SFTP_LOG_FORMAT` picks slog's text or JSON handler
+  for the whole process, so audit events and operational lines go to the
+  same place and a collector filters on `audit`.
+- **One logger per connection.** Once the PROXY header (if any) is read and
+  the ban check passed, the connection gets a random 8-byte session id and
+  a `slog.Logger` carrying `session` and `remote`, plus `user` after login.
+  The authentication callbacks log through it, and the user's filesystem
+  holds it with the session's byte counters, so the SFTP handlers need no
+  extra arguments.
+- **One `AuthLogCallback`.** ssh calls it after every authentication
+  attempt. `watchAuth` copies the server's `ssh.ServerConfig` for each
+  connection and sets one callback that both counts failures for bans and
+  logs `login_failed`. With bans off, the ban calls are no-ops on a nil
+  limiter, so behaviour does not depend on the setting. Wrong passwords are
+  logged one by one; rejected keys are not (clients offer every key they
+  hold), and a connection that tried and gave up without a wrong password
+  logs one summary event when its handshake ends, as it counts one ban
+  failure.
+- **Logged at the end, not the start.** An upload's event comes from the
+  stream writer's close, after the multipart upload completed or was
+  aborted, so `result` is what S3 did; a download's from the reader's
+  close. When a client disconnects with files open, `pkg/sftp` reports a
+  transfer error and closes them, which logs them as failed. `session_end`
+  waits for every channel of the connection, so it comes after the
+  connection's transfer events.
+
 ## Why Go (decision record)
 
 A Rust prototype (`russh` 0.65 + `russh-sftp` 3.0 + `aws-sdk-s3`) was built
