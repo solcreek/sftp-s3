@@ -10,8 +10,8 @@ S3 as multipart uploads and never touch local disk.
   Cloudflare R2, MinIO, RustFS, SeaweedFS and Versity Gateway all pass the
   integration suite.
 - Each user is confined to `s3://<bucket>/<prefix><user>/`.
-- Hardened for a public port 22: delayed answers to wrong passwords, a login
-  timeout, and a connection cap.
+- Hardened for a public port 22: delayed answers to wrong passwords, bans on
+  client IPs that keep failing, a login timeout, and a connection cap.
 - Graceful shutdown: on SIGTERM it stops accepting and lets open transfers
   finish. On SIGHUP it [reloads the users](#reloading-users) without
   dropping sessions.
@@ -47,6 +47,11 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 | `S3_PART_SIZE_MB` | `8` | multipart part size, 5–5120. S3 allows 10,000 parts, so 8 MiB caps a file at about 80 GB |
 | `SFTP_MAX_CONNECTIONS` | `32` | concurrent connections; budget about 120 MiB of memory per concurrent large upload |
 | `SFTP_PROXY_PROTOCOL` | `off` | `on`: every connection must start with a PROXY protocol header (v1 or v2) from a load balancer, and logs show the client address it carries. Make the port reachable only through that load balancer |
+| `SFTP_BAN_THRESHOLD` | `10` | failed logins from one client IP within `SFTP_BAN_WINDOW` that get it banned; `0` turns bans off. See [Failed-login bans](#failed-login-bans) |
+| `SFTP_BAN_WINDOW` | `10m` | how far back failures are counted (Go duration: `90s`, `10m`, `1h`) |
+| `SFTP_BAN_DURATION` | `15m` | first ban; each repeat ban doubles it |
+| `SFTP_BAN_MAX_DURATION` | `24h` | longest ban, and how long a past ban counts as a repeat offence |
+| `SFTP_MAX_AUTH_TRIES` | `6` | login attempts per connection, 1–100 |
 | `S3_ENDPOINT` | AWS | URL of an S3-compatible store; see below |
 | `S3_REGION` | `AWS_REGION` | region to sign for |
 | `S3_PATH_STYLE` | see below | `true` or `false` |
@@ -156,6 +161,45 @@ Something must send it SIGHUP, such as a reloader sidecar in a pod with
 a content hash, so editing `users` there rolls the pods. The
 [AWS stack](deploy/aws) passes the users from SSM in `SFTP_USERS` when a
 task or container starts, so SIGHUP does not apply there: redeploy.
+
+### Failed-login bans
+
+A client IP (an IPv4 address, or an IPv6 /64) that fails to log in
+`SFTP_BAN_THRESHOLD` times within `SFTP_BAN_WINDOW` is banned: its new
+connections are closed at once, before the SSH handshake, and logins already
+under way on its open connections are refused, even with the right password.
+The first ban lasts `SFTP_BAN_DURATION`; each further ban within
+`SFTP_BAN_MAX_DURATION` of the last one lasts twice as long as the one
+before, up to `SFTP_BAN_MAX_DURATION`.
+
+What counts as one failure:
+
+- each wrong password;
+- a connection that tries to log in and closes without succeeding, if it
+  sent no wrong password (a client offering several unknown keys counts
+  once, not once per key).
+
+Connections that never try to log in, such as load balancer health checks
+and port scans, are not counted.
+
+Every ban is logged at warning level (`client banned`), and its end at info
+level (`client unbanned`, when the next connection or failure notices it),
+with the number of connections refused meanwhile. Each refused connection is
+logged at debug level only. The table of clients is capped at 10,000; when
+it is full, the client whose record would expire first is forgotten early.
+
+Limitations:
+
+- **State is per process.** Bans live in memory, so each replica (each ECS
+  task, each pod) counts and bans on its own, and a restart forgets them.
+  Behind a load balancer spreading connections over two replicas, a client
+  gets up to about twice the threshold before both have banned it.
+- **Bans need the real client IP.** Behind a TCP proxy that hides it (one
+  without the PROXY protocol, or a Kubernetes Service without
+  `externalTrafficPolicy: Local`), every client seems to come from the
+  proxy's address, and one client's failures ban everyone. Use
+  `SFTP_PROXY_PROTOCOL=on` there, or set `SFTP_BAN_THRESHOLD=0`. An AWS NLB
+  and Fly.io with `proxy_proto` pass the client IP.
 
 ### S3 credentials
 
