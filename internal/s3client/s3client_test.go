@@ -74,6 +74,9 @@ func TestDefaults(t *testing.T) {
 			if o.RequestChecksumCalculation != wantReq || o.ResponseChecksumValidation != wantResp {
 				t.Fatalf("checksum modes %v/%v, want %v/%v", o.RequestChecksumCalculation, o.ResponseChecksumValidation, wantReq, wantResp)
 			}
+			if !o.DisableLogOutputChecksumValidationSkipped {
+				t.Fatal("the SDK may print checksum-skip lines to stderr")
+			}
 			if gotEP := aws.ToString(o.BaseEndpoint); gotEP != tt.want.Endpoint {
 				t.Fatalf("endpoint %q, want %q", gotEP, tt.want.Endpoint)
 			}

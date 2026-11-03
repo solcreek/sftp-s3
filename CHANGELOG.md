@@ -6,6 +6,8 @@ break configuration.
 
 ## Unreleased
 
+- The AWS SDK no longer prints a `DEBUG Response has no supported checksum`
+  line to stderr for every ranged download, which broke JSON log parsing.
 - Audit log: logins, failed logins, uploads (logged when the S3 upload
   completes or is aborted), downloads, mkdir, rmdir, remove, rename,
   setstat and session ends are each logged as one info-level event with
