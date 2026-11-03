@@ -179,6 +179,10 @@ func (l *limiter) fail(a net.Addr) {
 	defer l.mu.Unlock()
 	now := l.now()
 	h := l.hosts[k]
+	if h != nil && !now.Before(h.expires) { // stale: start afresh
+		l.bannedNow(k, h, now) // logs the unban if it went unnoticed
+		h = nil
+	}
 	if h == nil {
 		l.makeRoom(now)
 		h = &host{}
