@@ -4,9 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 )
 
 // Audit events are ordinary log records at INFO. Each carries audit=<event>,
@@ -25,6 +28,25 @@ const (
 	evSetstat     = "setstat"
 	evSessionEnd  = "session_end"
 )
+
+// maxLoggedName caps client-chosen strings (user names, auth method names)
+// in logs: a client may send one as large as an SSH packet, and failed
+// logins repeat it.
+const maxLoggedName = 64
+
+// loggedName returns s for a log record, cut to maxLoggedName bytes on a
+// rune boundary, with the original length noted when cut.
+func loggedName(s string) string {
+	s = strings.ToValidUTF8(s, "\uFFFD")
+	if len(s) <= maxLoggedName {
+		return s
+	}
+	cut := maxLoggedName
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return fmt.Sprintf("%s...(%d bytes)", s[:cut], len(s))
+}
 
 // audit logs one audit event.
 func audit(log *slog.Logger, event string, attrs ...any) {

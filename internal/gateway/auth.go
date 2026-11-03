@@ -112,7 +112,7 @@ func (a authenticator) password(c ssh.ConnMetadata, pass []byte) (*ssh.Permissio
 	if !ok {
 		reason = errUnknownUser
 	}
-	return nil, fmt.Errorf("password rejected for %q: %w", c.User(), reason)
+	return nil, fmt.Errorf("password rejected for %q: %w", loggedName(c.User()), reason)
 }
 
 // publicKey is not delayed on failure: clients offer every key they hold,
@@ -126,5 +126,5 @@ func (a authenticator) publicKey(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Pe
 			}
 		}
 	}
-	return nil, fmt.Errorf("key rejected for %q", c.User())
+	return nil, fmt.Errorf("key rejected for %q", loggedName(c.User()))
 }

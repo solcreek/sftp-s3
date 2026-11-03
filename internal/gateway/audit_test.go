@@ -445,3 +445,43 @@ func TestFailReason(t *testing.T) {
 		}
 	}
 }
+
+func TestLoggedName(t *testing.T) {
+	long := strings.Repeat("a", 63) + "é" + strings.Repeat("b", 100) // é straddles byte 64
+	for in, want := range map[string]string{
+		"alice":                 "alice",
+		strings.Repeat("x", 64): strings.Repeat("x", 64),
+		strings.Repeat("x", 65): strings.Repeat("x", 64) + "...(65 bytes)",
+		long:                    strings.Repeat("a", 63) + "...(165 bytes)",
+		"bad\xffutf8":           "bad�utf8",
+	} {
+		if got := loggedName(in); got != want {
+			t.Errorf("loggedName(%.20q...) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A client-chosen user name is capped in every record that carries it.
+func TestAuditCapsLongUserNames(t *testing.T) {
+	logs := captureJSON(t)
+	e := newEnv(t)
+	huge := strings.Repeat("u", 30000)
+	if c, err := ssh.Dial("tcp", e.addr, &ssh.ClientConfig{User: huge,
+		Auth:            []ssh.AuthMethod{ssh.Password("x"), ssh.PublicKeys(newKey(t))},
+		HostKeyCallback: ssh.FixedHostKey(e.hostPK)}); err == nil {
+		c.Close()
+		t.Fatal("login accepted")
+	}
+	evs := stopAndCollect(t, e, logs)
+	if len(named(evs, evLoginFailed)) == 0 {
+		t.Fatalf("no login_failed in %v", evs)
+	}
+	if strings.Contains(logs.String(), strings.Repeat("u", maxLoggedName+1)) {
+		t.Fatal("a user name longer than the cap reached the log")
+	}
+	for _, ev := range named(evs, evLoginFailed) {
+		if want := strings.Repeat("u", maxLoggedName) + "...(30000 bytes)"; ev["user"] != want {
+			t.Errorf("user = %.80v, want the capped name", ev["user"])
+		}
+	}
+}

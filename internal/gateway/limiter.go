@@ -281,7 +281,8 @@ func (s *Server) watchAuth(remote net.Addr, log *slog.Logger) (cfg *ssh.ServerCo
 		if method == "none" { // a client asking which methods exist
 			return
 		}
-		user = m.User()
+		user = loggedName(m.User())
+		method = loggedName(method)
 		if !slices.Contains(methods, method) {
 			methods = append(methods, method)
 		}
