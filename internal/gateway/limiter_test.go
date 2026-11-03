@@ -110,18 +110,29 @@ func TestLimiterWindowSlides(t *testing.T) {
 	clk := newFakeClock()
 	l := newLimiter(3, time.Minute, time.Hour, time.Hour, 100, clk.now)
 	a := tcp("203.0.113.7:1")
-	l.fail(a)
-	l.fail(a)
-	clk.advance(time.Minute) // both fall out of the window
-	l.fail(a)
-	l.fail(a)
+	l.fail(a) // t=0
+	clk.advance(40 * time.Second)
+	l.fail(a) // t=40s
+	clk.advance(20 * time.Second)
+	l.fail(a) // t=60s: the first has left the window
 	if !l.allow(a) {
-		t.Fatal("failures older than the window were counted")
+		t.Fatal("a failure older than the window was counted")
 	}
-	clk.advance(30 * time.Second)
-	l.fail(a)
+	clk.advance(10 * time.Second)
+	l.fail(a) // t=70s: three within the last minute
 	if l.allow(a) {
 		t.Fatal("three failures within the window did not ban")
+	}
+
+	// A record whose failures have all left the window starts afresh.
+	b := tcp("198.51.100.1:1")
+	l.fail(b)
+	l.fail(b)
+	clk.advance(time.Minute)
+	l.fail(b)
+	l.fail(b)
+	if !l.allow(b) {
+		t.Fatal("failures older than the window were counted")
 	}
 }
 
