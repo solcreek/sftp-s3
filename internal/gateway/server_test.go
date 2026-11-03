@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"bytes"
+	"encoding/json"
 	"crypto/ed25519"
 	"crypto/rand"
 	"errors"
@@ -109,6 +110,37 @@ func TestPasswordHashLogin(t *testing.T) {
 		t.Fatalf("bcrypt login failed: %v", err)
 	}
 	c.Close()
+}
+
+// SFTPGo stores bcrypt hashes; users moving over keep their passwords.
+func TestSFTPGoHashLogin(t *testing.T) {
+	raw, err := os.ReadFile("../../testdata/sftpgo-dump.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dump struct {
+		Users []struct{ Username, Password string }
+	}
+	if err := json.Unmarshal(raw, &dump); err != nil {
+		t.Fatal(err)
+	}
+	users := map[string]User{}
+	for _, u := range dump.Users {
+		users[u.Username] = User{PasswordHash: u.Password}
+	}
+	e := newEnv(t, func(c *Config) { c.Users = users })
+	for _, name := range []string{"alice", "bob"} {
+		if c, err := e.sshDial(name, name+"-wrong"); err == nil {
+			c.Close()
+			t.Errorf("%s: wrong password accepted", name)
+		}
+		c, err := e.sshDial(name, name+"-pass")
+		if err != nil {
+			t.Errorf("%s: SFTPGo hash rejected the right password: %v", name, err)
+			continue
+		}
+		c.Close()
+	}
 }
 
 func TestPublicKeyLogin(t *testing.T) {
