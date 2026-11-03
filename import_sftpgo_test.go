@@ -274,10 +274,11 @@ func TestConvertSFTPGo(t *testing.T) {
 	key, _ := authorizedKey(t, "k@host")
 	fs := func(s3 string) string { return `"filesystem": {"provider": 1, "s3config": {` + s3 + `}}` }
 	tests := []struct {
-		name  string
-		users []string
-		want  map[string]string // user -> expected fragment of their output entry
-		warn  []string
+		name    string
+		users   []string
+		want    map[string]string   // user -> expected fragment of their output entry
+		without map[string][]string // user -> credentials ("hash", "keys") they must not have
+		warn    []string
 	}{
 		{
 			name:  "argon2 password dropped, keys kept",
@@ -338,6 +339,30 @@ func TestConvertSFTPGo(t *testing.T) {
 			},
 			want: map[string]string{"ok": `"username": "ok"`},
 			warn: []string{`skipped user "g": storage provider 2 is not S3`},
+		},
+		{
+			// A login method SFTPGo denies is kept denied by not copying
+			// its credential; a user left with none is skipped.
+			name: "denied login methods",
+			users: []string{
+				s3User("keyonly", `"public_keys": ["`+key+`"], "filters": {"denied_login_methods": ["password"]}`),
+				s3User("nosshpw", `"public_keys": ["`+key+`"], "filters": {"denied_login_methods": ["password-over-SSH"]}`),
+				s3User("pwonly", `"public_keys": ["`+key+`"], "filters": {"denied_login_methods": ["publickey"]}`),
+				s3User("kbd", `"filters": {"denied_login_methods": ["keyboard-interactive"]}`),
+				s3User("none", `"public_keys": ["`+key+`"], "filters": {"denied_login_methods": ["password", "publickey"]}`),
+				s3User("nopw", `"password": "", "filters": {"denied_login_methods": ["publickey"]}`),
+			},
+			want:    map[string]string{"keyonly": `"public_keys"`, "nosshpw": `"public_keys"`, "pwonly": `"password_hash"`, "kbd": `"password_hash"`},
+			without: map[string][]string{"keyonly": {"hash"}, "nosshpw": {"hash"}, "pwonly": {"keys"}},
+			warn: []string{
+				`user "keyonly": password login is denied in SFTPGo; password not copied`,
+				`user "nosshpw": password login is denied`,
+				`user "pwonly": public key login is denied in SFTPGo; public keys not copied`,
+				`user "none": password login is denied`,
+				`user "none": public key login is denied`,
+				`skipped user "none": no usable password or public key`,
+				`skipped user "nopw": no usable password or public key`,
+			},
 		},
 		{
 			name: "settings not carried over",
@@ -409,6 +434,11 @@ func TestConvertSFTPGo(t *testing.T) {
 				frag, ok := tt.want[u.Username]
 				if !ok || !strings.Contains(string(out), frag) {
 					t.Errorf("user %q: want %q in\n%s", u.Username, frag, out)
+				}
+				for _, w := range tt.without[u.Username] {
+					if (w == "hash" && u.PasswordHash != "") || (w == "keys" && len(u.PublicKeys) > 0) {
+						t.Errorf("user %q: has %s, want none", u.Username, w)
+					}
 				}
 			}
 			lines := strings.Split(strings.TrimSpace(warn.String()), "\n")

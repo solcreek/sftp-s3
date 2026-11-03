@@ -43,8 +43,9 @@ type sftpgoUser struct {
 		Name string `json:"name"`
 	} `json:"groups"`
 	Filters struct {
-		AllowedIP []string `json:"allowed_ip"`
-		DeniedIP  []string `json:"denied_ip"`
+		AllowedIP          []string `json:"allowed_ip"`
+		DeniedIP           []string `json:"denied_ip"`
+		DeniedLoginMethods []string `json:"denied_login_methods"`
 	} `json:"filters"`
 	Filesystem struct {
 		Provider int `json:"provider"`
@@ -165,12 +166,24 @@ func convertSFTPGoUser(su sftpgoUser, warn io.Writer) (importedUser, bool) {
 		return skip(fmt.Sprintf("key prefix %q does not end in '/' or starts with '/'", s3.KeyPrefix))
 	}
 	u := importedUser{Username: name, Bucket: s3.Bucket, Prefix: s3.KeyPrefix}
+	// A login method SFTPGo denies stays denied by leaving its credential
+	// out. "password" denies it on every protocol, "password-over-SSH" on
+	// SFTP only; the gateway offers neither keyboard-interactive nor the
+	// multi-step methods, so denying those changes nothing here.
+	denied := su.Filters.DeniedLoginMethods
 	if su.Password != "" {
-		if isBcrypt(su.Password) {
+		switch {
+		case slices.Contains(denied, "password") || slices.Contains(denied, "password-over-SSH"):
+			note("password login is denied in SFTPGo; password not copied")
+		case isBcrypt(su.Password):
 			u.PasswordHash = su.Password
-		} else {
+		default:
 			note("password is not a bcrypt hash; dropped (set a new one with sftp-s3 -hash-password)")
 		}
+	}
+	if len(su.PublicKeys) > 0 && slices.Contains(denied, "publickey") {
+		note("public key login is denied in SFTPGo; public keys not copied")
+		su.PublicKeys = nil
 	}
 	for i, k := range su.PublicKeys {
 		if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(k)); err != nil {
