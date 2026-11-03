@@ -170,7 +170,9 @@ func runCheck(ctx context.Context, getenv func(string) string, out io.Writer) er
 		}
 	}
 	fmt.Fprintf(out, "users: %d (%d keys, %d hashed passwords, %d plaintext passwords)\n", len(cfg.Users), keys, hashed, plain)
-	fmt.Fprintf(out, "host key: %s\n", ssh.FingerprintSHA256(cfg.HostKeys[0].PublicKey()))
+	for _, k := range cfg.HostKeys {
+		fmt.Fprintf(out, "host key: %s %s\n", k.PublicKey().Type(), ssh.FingerprintSHA256(k.PublicKey()))
+	}
 	for _, b := range buckets(cfg) {
 		if _, err := cfg.Client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &b}); err != nil {
 			return fmt.Errorf("bucket %q: %w", b, err)
@@ -211,8 +213,10 @@ func run(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
-	slog.Info("listening", "version", version, "addr", ln.Addr().String(), "buckets", strings.Join(buckets(cfg), ","),
-		"fingerprint", ssh.FingerprintSHA256(cfg.HostKeys[0].PublicKey()))
+	for _, k := range cfg.HostKeys {
+		slog.Info("host key", "type", k.PublicKey().Type(), "fingerprint", ssh.FingerprintSHA256(k.PublicKey()))
+	}
+	slog.Info("listening", "version", version, "addr", ln.Addr().String(), "buckets", strings.Join(buckets(cfg), ","))
 	go func() {
 		<-ctx.Done()
 		slog.Info("shutting down; waiting for open sessions")
