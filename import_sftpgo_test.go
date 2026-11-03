@@ -341,6 +341,15 @@ func TestConvertSFTPGo(t *testing.T) {
 			warn: []string{`skipped user "g": storage provider 2 is not S3`},
 		},
 		{
+			name: "SSH denied",
+			users: []string{
+				s3User("ftponly", `"filters": {"denied_protocols": ["SSH"]}`),
+				s3User("noftp", `"filters": {"denied_protocols": ["FTP", "DAV"]}`),
+			},
+			want: map[string]string{"noftp": `"noftp"`},
+			warn: []string{`skipped user "ftponly": SFTP (protocol SSH) is denied in SFTPGo`},
+		},
+		{
 			// A login method SFTPGo denies is kept denied by not copying
 			// its credential; a user left with none is skipped.
 			name: "denied login methods",
