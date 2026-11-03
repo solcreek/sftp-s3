@@ -161,6 +161,9 @@ SFTP_USERS_FILE=users.json S3_REGION=... sftp-s3 -check
   S3, and users left with neither a bcrypt password nor a public key.
   Passwords hashed another way (argon2id, PBKDF2, ...) are dropped with a
   warning; set a new one with `sftp-s3 -hash-password`.
+- Login methods denied in SFTPGo (`denied_login_methods`) stay denied: the
+  password hash is not copied when `password` or `password-over-SSH` is
+  denied, nor are the public keys when `publickey` is, each with a warning.
 - Imported, with a warning, but without: virtual folders, quotas, IP
   filters, permissions other than full access, group settings, and
   expiration dates.
