@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"net"
@@ -8,6 +9,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -182,50 +185,61 @@ func TestConcurrentLoginsDuringSetUsers(t *testing.T) {
 	reloads.Wait()
 }
 
-// A user removed after authentication succeeded but before the connection
-// looked up its location is turned away rather than given a default one.
-func TestUserRemovedDuringLoginIsRefused(t *testing.T) {
-	client, bucket, _ := memoryStore(t)
-	_, priv, _ := ed25519.GenerateKey(rand.Reader)
-	signer, _ := ssh.NewSignerFromKey(priv)
-	srv, err := New(Config{Client: client, Bucket: bucket, HostKeys: []ssh.Signer{signer},
-		Users: map[string]User{"alice": {Password: "alice-pw"}, "bob": {Password: "bob-pw"}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	check := srv.sshCfg.PasswordCallback
-	srv.sshCfg.PasswordCallback = func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-		p, err := check(c, pass)
-		if err == nil {
-			srv.SetUsers(map[string]User{"bob": {Password: "bob-pw"}})
-		}
-		return p, err
-	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	served := make(chan error, 1)
-	go func() { served <- srv.Serve(ln) }()
-	defer func() { ln.Close(); <-served }()
+// A session lives where the user set it authenticated against says, even
+// when SetUsers moves or removes the user during the login.
+func TestLocationIsFixedAtAuthentication(t *testing.T) {
+	for name, next := range map[string]map[string]User{
+		"moved":   {"alice": {Password: "alice-pw", Bucket: testBucket, Root: "second/"}},
+		"removed": {"bob": {Password: "bob-pw"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, bucket, _ := memoryStore(t)
+			_, priv, _ := ed25519.GenerateKey(rand.Reader)
+			signer, _ := ssh.NewSignerFromKey(priv)
+			srv, err := New(Config{Client: client, Bucket: bucket, HostKeys: []ssh.Signer{signer},
+				Users: map[string]User{"alice": {Password: "alice-pw", Bucket: bucket, Root: "first/"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Before Serve, so the server goroutines see the wrapped callback.
+			check := srv.sshCfg.PasswordCallback
+			srv.sshCfg.PasswordCallback = func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+				p, err := check(c, pass)
+				if err == nil {
+					if err := srv.SetUsers(next); err != nil {
+						t.Error(err)
+					}
+				}
+				return p, err
+			}
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			served := make(chan error, 1)
+			go func() { served <- srv.Serve(ln) }()
+			defer func() { ln.Close(); <-served }()
 
-	c, err := ssh.Dial("tcp", ln.Addr().String(), &ssh.ClientConfig{
-		User: "alice", Auth: []ssh.AuthMethod{ssh.Password("alice-pw")},
-		HostKeyCallback: ssh.FixedHostKey(signer.PublicKey()),
-	})
-	if err != nil {
-		t.Fatalf("handshake: %v", err)
-	}
-	defer c.Close()
-	if s, err := c.NewSession(); err == nil {
-		s.Close()
-		t.Fatal("a user removed during login got a session")
-	}
-}
-
-func TestUserFSOfUnknownUser(t *testing.T) {
-	e := newEnv(t)
-	if fs, ok := e.srv.userFS("mallory"); ok || fs != nil {
-		t.Fatalf("userFS(unknown) = %v, %v", fs, ok)
+			conn, err := ssh.Dial("tcp", ln.Addr().String(), &ssh.ClientConfig{
+				User: "alice", Auth: []ssh.AuthMethod{ssh.Password("alice-pw")},
+				HostKeyCallback: ssh.FixedHostKey(signer.PublicKey()),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			c, err := sftp.NewClient(conn)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+			upload(t, c, "/x.txt", []byte("x"))
+			for key, want := range map[string]bool{"first/x.txt": true, "second/x.txt": false} {
+				_, err := client.HeadObject(context.Background(), &s3.HeadObjectInput{Bucket: &bucket, Key: &key})
+				if (err == nil) != want {
+					t.Errorf("object %s exists: %v, want %v", key, err == nil, want)
+				}
+			}
+		})
 	}
 }

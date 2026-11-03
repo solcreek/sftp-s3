@@ -102,7 +102,7 @@ func New(cfg Config) (*Server, error) {
 	if err := s.SetUsers(cfg.Users); err != nil {
 		return nil, err
 	}
-	auth := authenticator{users: s.currentUsers, delay: cfg.AuthFailDelay}
+	auth := authenticator{users: s.currentUsers, delay: cfg.AuthFailDelay, locate: s.locate}
 	s.sshCfg = &ssh.ServerConfig{
 		PasswordCallback:  auth.password,
 		PublicKeyCallback: auth.publicKey,
@@ -191,15 +191,11 @@ func (s *Server) handleConn(nc net.Conn) {
 	nc.SetDeadline(time.Time{}) // logged in: sessions may idle and transfer as long as they like
 	defer sc.Close()
 	method := "password"
-	if fp, ok := sc.Permissions.Extensions["pubkey-fp"]; ok {
+	ext := sc.Permissions.Extensions
+	if fp, ok := ext[extKeyFP]; ok {
 		method = fp
 	}
-	fs, ok := s.userFS(sc.User())
-	if !ok {
-		// Removed by SetUsers between authentication and here.
-		slog.Info("login refused: user removed during login", "user", sc.User(), "remote", nc.RemoteAddr())
-		return
-	}
+	fs := s.userFS(ext[extBucket], ext[extRoot])
 	slog.Info("login", "user", sc.User(), "remote", nc.RemoteAddr(), "auth", method, "bucket", fs.bucket, "root", fs.root)
 	go ssh.DiscardRequests(reqs)
 
@@ -259,19 +255,19 @@ func isSFTP(payload []byte) bool {
 	return ssh.Unmarshal(payload, &p) == nil && p.Name == "sftp"
 }
 
-// userFS returns the filesystem of the named user in the current set, or
-// ok=false if there is no such user.
-func (s *Server) userFS(name string) (fs *userFS, ok bool) {
-	u, ok := s.currentUsers()[name]
-	if !ok {
-		return nil, false
+// locate gives where a user's files live: their own bucket and root, or
+// <Prefix><name>/ in the default bucket.
+func (s *Server) locate(name string, u User) (bucket, root string) {
+	if u.Bucket != "" {
+		return u.Bucket, u.Root
 	}
-	fs = &userFS{
-		client: s.cfg.Client, bucket: s.cfg.Bucket, root: s.cfg.Prefix + name + "/",
+	return s.cfg.Bucket, s.cfg.Prefix + name + "/"
+}
+
+// userFS is a filesystem confined to s3://bucket/root.
+func (s *Server) userFS(bucket, root string) *userFS {
+	return &userFS{
+		client: s.cfg.Client, bucket: bucket, root: root,
 		partSize: s.cfg.PartSize, maxReorder: s.cfg.MaxReorder,
 	}
-	if u.Bucket != "" {
-		fs.bucket, fs.root = u.Bucket, u.Root
-	}
-	return fs, true
 }
