@@ -208,6 +208,11 @@ func run(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
+	// SIGHUP re-reads the users; open sessions are not affected. Registered
+	// before listening, so a SIGHUP once the server is up cannot kill it.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
 	addr := ":" + orDefault(getenv("PORT"), "2222")
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -218,11 +223,61 @@ func run(ctx context.Context, getenv func(string) string) error {
 	}
 	slog.Info("listening", "version", version, "addr", ln.Addr().String(), "buckets", strings.Join(buckets(cfg), ","))
 	go func() {
+		for {
+			select {
+			case <-hup:
+				logReload(reloadUsers(getenv, cfg, srv))
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
 		<-ctx.Done()
 		slog.Info("shutting down; waiting for open sessions")
 		ln.Close()
 	}()
 	return srv.Serve(ln)
+}
+
+// errNoUsersFile reports a reload when users come from SFTP_USERS, which is
+// part of the process environment and cannot change while it runs.
+var errNoUsersFile = errors.New("users come from SFTP_USERS, which cannot change while running; set SFTP_USERS_FILE to reload users")
+
+// reloadUsers re-reads SFTP_USERS_FILE, parses it as loadConfig does, and
+// gives the users to srv, returning how many there are. On any error srv
+// keeps its current users. Errors name entries, never credentials.
+func reloadUsers(getenv func(string) string, cfg gateway.Config, srv *gateway.Server) (int, error) {
+	path := getenv("SFTP_USERS_FILE")
+	if path == "" {
+		return 0, errNoUsersFile
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("SFTP_USERS_FILE: %w", err)
+	}
+	users, err := loadUsers(string(data), cfg.Bucket, cfg.Prefix)
+	if err != nil {
+		return 0, err
+	}
+	if err := srv.SetUsers(users); err != nil {
+		return 0, err
+	}
+	for _, name := range plaintextUsers(users) {
+		slog.Warn("plaintext password; store a bcrypt hash instead (sftp-s3 -hash-password)", "user", name)
+	}
+	return len(users), nil
+}
+
+func logReload(n int, err error) {
+	switch {
+	case errors.Is(err, errNoUsersFile):
+		slog.Warn("SIGHUP: nothing to reload", "reason", err)
+	case err != nil:
+		slog.Error("SIGHUP: users not reloaded; keeping the current users", "err", err)
+	default:
+		slog.Info("SIGHUP: users reloaded", "users", n)
+	}
 }
 
 // secretEnv returns the value of name, or the contents of the file named by
