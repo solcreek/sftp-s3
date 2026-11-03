@@ -180,7 +180,7 @@ func TestPublicKeyLogin(t *testing.T) {
 	}
 	c.Close()
 	deadline := time.Now().Add(2 * time.Second)
-	for !strings.Contains(logs.String(), "auth="+ssh.FingerprintSHA256(daveKey.PublicKey())) {
+	for !strings.Contains(logs.String(), "fingerprint="+ssh.FingerprintSHA256(daveKey.PublicKey())) {
 		if time.Now().After(deadline) {
 			t.Fatalf("login log does not name the key:\n%s", logs.String())
 		}

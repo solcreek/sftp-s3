@@ -45,6 +45,10 @@ type env struct {
 	seen   *headerLog // request headers the store received; in-memory store only
 	bucket string
 	base   string // key prefix this test owns; "" on the in-memory store
+
+	// stop closes the listener and waits for every connection to end, so
+	// everything they log is logged. Clients must have closed by then.
+	stop func()
 }
 
 type envOpt func(*Config)
@@ -88,13 +92,17 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 	}
 	served := make(chan error, 1)
 	go func() { served <- srv.Serve(ln) }()
-	t.Cleanup(func() {
-		ln.Close()
-		if err := <-served; err != nil {
-			t.Errorf("Serve: %v", err)
-		}
-	})
-	return &env{t: t, srv: srv, s3: client, addr: ln.Addr().String(), hostPK: signer.PublicKey(), seen: seen, bucket: bucket, base: base}
+	var once sync.Once
+	stop := func() {
+		once.Do(func() {
+			ln.Close()
+			if err := <-served; err != nil {
+				t.Errorf("Serve: %v", err)
+			}
+		})
+	}
+	t.Cleanup(stop)
+	return &env{t: t, srv: srv, s3: client, addr: ln.Addr().String(), hostPK: signer.PublicKey(), seen: seen, bucket: bucket, base: base, stop: stop}
 }
 
 func (e *env) sshDial(user, pass string) (*ssh.Client, error) {

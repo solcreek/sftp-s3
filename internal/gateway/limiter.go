@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -255,30 +257,39 @@ func later(a, b time.Time) time.Time {
 	return b
 }
 
-// watchAuth returns the SSH configuration for one connection from remote.
-// It counts the connection's failed logins and refuses every login once
-// remote is banned, even one already under way. Call done with the
-// handshake's error.
+// watchAuth returns the SSH configuration for one connection from remote,
+// whose AuthLogCallback feeds both the ban counting and the audit log
+// (through log, which carries the connection's session and remote). It
+// refuses every login once remote is banned, even one already under way.
+// Call done with the handshake's error.
 //
-// Counted as failures: each wrong password, and a connection that ends
-// without logging in after trying at least one method, if no wrong password
-// was counted for it already. Rejected public keys are not counted one by
-// one (clients offer every key they hold), and connections that never try
-// to log in (load balancer health checks, port scans) are not counted.
-func (s *Server) watchAuth(remote net.Addr) (cfg *ssh.ServerConfig, done func(error)) {
-	if s.bans == nil {
-		return s.sshCfg, func(error) {}
-	}
+// Counted as failures, and logged as login_failed: each wrong password, and
+// a connection that ends without logging in after trying at least one
+// method, if no wrong password was counted for it already. Rejected public
+// keys are not counted one by one (clients offer every key they hold), and
+// connections that never try to log in (load balancer health checks, port
+// scans) are not counted. With bans off (s.bans nil) only the log remains.
+func (s *Server) watchAuth(remote net.Addr, log *slog.Logger) (cfg *ssh.ServerConfig, done func(error)) {
 	c := *s.sshCfg // what ssh.NewServerConn does too
-	var attempts, wrongPasswords int
-	c.AuthLogCallback = func(_ ssh.ConnMetadata, method string, err error) {
+	var (
+		methods        []string // tried, in order, without repeats
+		wrongPasswords int
+		banned         bool
+		user           string // the last user name tried
+	)
+	c.AuthLogCallback = func(m ssh.ConnMetadata, method string, err error) {
 		if method == "none" { // a client asking which methods exist
 			return
 		}
-		attempts++
+		user = m.User()
+		if !slices.Contains(methods, method) {
+			methods = append(methods, method)
+		}
+		banned = banned || errors.Is(err, errBanned)
 		if method == "password" && err != nil {
 			wrongPasswords++
 			s.bans.fail(remote)
+			audit(log, evLoginFailed, "user", user, "method", method, "reason", failReason(err))
 		}
 	}
 	password, publicKey := c.PasswordCallback, c.PublicKeyCallback
@@ -295,9 +306,18 @@ func (s *Server) watchAuth(remote net.Addr) (cfg *ssh.ServerConfig, done func(er
 		return publicKey(m, key)
 	}
 	return &c, func(err error) {
-		if err != nil && attempts > 0 && wrongPasswords == 0 {
-			s.bans.fail(remote)
+		if err == nil || len(methods) == 0 || wrongPasswords > 0 {
+			return
 		}
+		s.bans.fail(remote)
+		reason := "no accepted method"
+		switch {
+		case banned:
+			reason = "banned"
+		case slices.Contains(methods, "publickey"):
+			reason = "no accepted key"
+		}
+		audit(log, evLoginFailed, "user", user, "method", strings.Join(methods, ","), "reason", reason)
 	}
 }
 
