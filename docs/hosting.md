@@ -19,8 +19,10 @@ filesystem.
 
 ## Things every deployment needs
 
-- **A pinned host key** (`SFTP_HOST_KEY`): clients remember it, and a new
-  one on every start looks like an attack to them.
+- **Pinned host keys** (`SFTP_HOST_KEY`, one per key type): clients remember
+  them, and a new one on every start looks like an attack to them. When
+  replacing a server, carry over every key it had
+  ([Host keys](../README.md#host-keys)).
 - **A graceful stop window.** On SIGTERM the gateway stops accepting
   connections and waits for open sessions. Give it as long as your platform
   allows (Fargate: `stopTimeout` up to 120 s; Kubernetes:
