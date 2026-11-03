@@ -54,6 +54,22 @@ type Config struct {
 	// are closed. The listener must then be reachable only through the
 	// proxy, or clients could claim any address.
 	ProxyProtocol bool
+
+	// BanThreshold is how many failed logins from one client (an IPv4
+	// address or an IPv6 /64) within BanWindow get it banned: its
+	// connections are then closed before the SSH handshake for BanDuration,
+	// doubled on each repeat ban up to BanMaxDuration. 0 means 10 failures;
+	// negative turns bans off. See watchAuth for what counts as a failure.
+	BanThreshold   int
+	BanWindow      time.Duration // 0 means 10 min
+	BanDuration    time.Duration // 0 means 15 min
+	BanMaxDuration time.Duration // 0 means 24 h; also how long past bans are remembered
+
+	// MaxAuthTries caps login attempts per connection; 0 means 6.
+	MaxAuthTries int
+
+	banHosts int              // cap on clients tracked for bans; 0 means 10000
+	clock    func() time.Time // for tests; nil means time.Now
 }
 
 // limitWarnEvery throttles the "connection limit reached" log.
@@ -66,6 +82,7 @@ type Server struct {
 	wg     sync.WaitGroup
 	slots  chan struct{} // one per open connection
 	users  atomic.Pointer[map[string]User]
+	bans   *limiter // nil when bans are off
 }
 
 // New validates cfg and builds a Server. It needs at least one host key and
@@ -98,7 +115,11 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AuthFailDelay == 0 {
 		cfg.AuthFailDelay = time.Second
 	}
-	s := &Server{cfg: cfg, slots: make(chan struct{}, cfg.MaxConns)}
+	bans, err := newBans(&cfg)
+	if err != nil {
+		return nil, err
+	}
+	s := &Server{cfg: cfg, slots: make(chan struct{}, cfg.MaxConns), bans: bans}
 	if err := s.SetUsers(cfg.Users); err != nil {
 		return nil, err
 	}
@@ -106,6 +127,7 @@ func New(cfg Config) (*Server, error) {
 	s.sshCfg = &ssh.ServerConfig{
 		PasswordCallback:  auth.password,
 		PublicKeyCallback: auth.publicKey,
+		MaxAuthTries:      cfg.MaxAuthTries,
 	}
 	for _, k := range cfg.HostKeys {
 		s.sshCfg.AddHostKey(k)
@@ -183,7 +205,13 @@ func (s *Server) handleConn(nc net.Conn) {
 		}
 		nc = pc
 	}
-	sc, chans, reqs, err := ssh.NewServerConn(nc, s.sshCfg)
+	if !s.bans.allow(nc.RemoteAddr()) {
+		slog.Debug("connection refused: client is banned", "remote", nc.RemoteAddr())
+		return
+	}
+	sshCfg, authDone := s.watchAuth(nc.RemoteAddr())
+	sc, chans, reqs, err := ssh.NewServerConn(nc, sshCfg)
+	authDone(err)
 	if err != nil {
 		slog.Log(context.Background(), handshakeLogLevel(err), "handshake failed", "remote", nc.RemoteAddr(), "err", err)
 		return
