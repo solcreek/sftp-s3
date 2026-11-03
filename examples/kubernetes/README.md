@@ -9,6 +9,17 @@ What it sets up:
   read-only root filesystem with all capabilities dropped.
 - **Graceful rollouts:** a 300 s termination grace period, so uploads in
   flight can finish during a rollout.
+- **Health and metrics:** `SFTP_METRICS_ADDR=:9090` serves `/healthz` and
+  `/metrics` on a container port the Service does not expose. The readiness
+  probe uses `/healthz`, which turns 503 on SIGTERM while uploads finish;
+  liveness stays a TCP check on the SFTP port, so a draining pod is not
+  killed. Kubernetes already drops terminating pods from the Service's
+  endpoints; `/healthz` matters most for a load balancer that health-checks
+  pods itself, such as an AWS NLB with `ip` targets (`service.yaml` has
+  commented annotations pointing its health check at `/healthz`). `prometheus.io/*` pod annotations point an
+  annotation-based Prometheus at `/metrics` (with the Prometheus Operator,
+  write a PodMonitor for the `http` port instead). See
+  [Metrics and health](../../README.md#metrics-and-health).
 - **Service:** a `LoadBalancer` on port 22 with
   `externalTrafficPolicy: Local`, so the logs show client IPs.
 - **PodDisruptionBudget:** keeps one pod available.
@@ -48,4 +59,5 @@ Verified 2026-11-01 on kind (Kubernetes 1.37) with an in-cluster RustFS:
 - uploads through the Service, with matching md5 in the store;
 - an upload running across `kubectl rollout restart` completed.
 
-The cloud load balancer annotations are not exercised by that test.
+The cloud load balancer annotations are not exercised by that test, nor is
+the `/healthz` readiness probe (added later; covered by the Go tests).

@@ -7,6 +7,11 @@ metadata:
   #   service.beta.kubernetes.io/aws-load-balancer-type: external
   #   service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
   #   service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+  #   # With ip targets the NLB checks pods itself; /healthz on the pod's
+  #   # http port makes it stop sending clients to a draining pod:
+  #   service.beta.kubernetes.io/aws-load-balancer-healthcheck-protocol: http
+  #   service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: "9090"
+  #   service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: /healthz
 spec:
   type: LoadBalancer
   # Keep client IPs in the logs; also what loadBalancerSourceRanges needs.
