@@ -6,6 +6,12 @@ break configuration.
 
 ## Unreleased
 
+- SIGHUP reloads the users from `SFTP_USERS_FILE` without dropping
+  sessions; an invalid file is logged and the current users stay. Open
+  sessions keep the bucket and prefix they authenticated with, even when
+  their user is removed: restart to end them. SIGHUP no longer stops the
+  process (before, Go's default ended it), also when only `SFTP_USERS` is
+  set.
 - Several host keys: `SFTP_HOST_KEY` / `SFTP_HOST_KEY_FILE` may hold one
   PEM private key per type (ed25519, ecdsa, rsa) concatenated, so clients
   that pinned any of an old server's keys keep connecting. `-check` and the
