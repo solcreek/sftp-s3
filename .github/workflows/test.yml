@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: opentofu/setup-opentofu@v1
+      - uses: opentofu/setup-opentofu@v2
       - run: tofu fmt -check -recursive deploy examples
       - run: tofu init -backend=false && tofu validate
         working-directory: examples/aws
