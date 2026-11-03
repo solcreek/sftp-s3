@@ -46,6 +46,7 @@ type sftpgoUser struct {
 		AllowedIP          []string `json:"allowed_ip"`
 		DeniedIP           []string `json:"denied_ip"`
 		DeniedLoginMethods []string `json:"denied_login_methods"`
+		DeniedProtocols    []string `json:"denied_protocols"`
 	} `json:"filters"`
 	Filesystem struct {
 		Provider int `json:"provider"`
@@ -158,6 +159,8 @@ func convertSFTPGoUser(su sftpgoUser, warn io.Writer) (importedUser, bool) {
 	switch {
 	case su.Status != 1:
 		return skip("disabled in SFTPGo")
+	case slices.Contains(su.Filters.DeniedProtocols, "SSH"):
+		return skip("SFTP (protocol SSH) is denied in SFTPGo")
 	case su.Filesystem.Provider != sftpgoS3Provider:
 		return skip(fmt.Sprintf("storage provider %d is not S3", su.Filesystem.Provider))
 	case s3.Bucket == "":
