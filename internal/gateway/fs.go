@@ -23,7 +23,7 @@ import (
 type userFS struct {
 	client     *s3.Client
 	bucket     string
-	root       string // "<prefix><user>/"
+	root       string // "" (the bucket root) or a prefix ending in "/"
 	partSize   int64
 	maxReorder int64
 }
@@ -37,15 +37,22 @@ func (u *userFS) key(p string) string {
 // dirKey returns the S3 prefix that represents directory p.
 func (u *userFS) dirKey(p string) string {
 	k := u.key(p)
-	if !strings.HasSuffix(k, "/") {
+	if k != "" && !strings.HasSuffix(k, "/") {
 		k += "/"
 	}
 	return k
 }
 
+// isRoot reports whether p names the user's root directory, which cannot be
+// written, created, removed or renamed: at the bucket root it has no key.
+func isRoot(p string) bool { return path.Clean("/"+p) == "/" }
+
 // ---------- uploads ----------
 
 func (u *userFS) Filewrite(r *sftp.Request) (io.WriterAt, error) {
+	if isRoot(r.Filepath) {
+		return nil, sftp.ErrSSHFxPermissionDenied
+	}
 	key := u.key(r.Filepath)
 	up := manager.NewUploader(u.client, func(m *manager.Uploader) {
 		m.PartSize = u.partSize
@@ -55,7 +62,7 @@ func (u *userFS) Filewrite(r *sftp.Request) (io.WriterAt, error) {
 		// the resulting per-part CRC32 checksums.
 		m.RequestChecksumCalculation = u.client.Options().RequestChecksumCalculation
 	})
-	slog.Info("upload start", "key", key)
+	slog.Info("upload start", "bucket", u.bucket, "key", key)
 	return newStreamWriter(u.maxReorder, func(body io.Reader) error {
 		_, err := up.Upload(context.Background(), &s3.PutObjectInput{Bucket: &u.bucket, Key: &key, Body: body})
 		return err
@@ -65,6 +72,9 @@ func (u *userFS) Filewrite(r *sftp.Request) (io.WriterAt, error) {
 // ---------- downloads ----------
 
 func (u *userFS) Fileread(r *sftp.Request) (io.ReaderAt, error) {
+	if isRoot(r.Filepath) {
+		return nil, sftp.ErrSSHFxPermissionDenied
+	}
 	key := u.key(r.Filepath)
 	if _, err := u.client.HeadObject(r.Context(), &s3.HeadObjectInput{Bucket: &u.bucket, Key: &key}); err != nil {
 		return nil, mapErr(err)
@@ -79,6 +89,11 @@ func (u *userFS) Filecmd(r *sftp.Request) error {
 	switch r.Method {
 	case "Setstat":
 		return nil // chmod/chown/utimes have no S3 equivalent; accept and ignore
+	}
+	if isRoot(r.Filepath) || (r.Method == "Rename" || r.Method == "PosixRename") && isRoot(r.Target) {
+		return sftp.ErrSSHFxPermissionDenied
+	}
+	switch r.Method {
 	case "Mkdir":
 		k := u.dirKey(r.Filepath) // zero-byte "dir/" marker so empty dirs show up
 		_, err := u.client.PutObject(ctx, &s3.PutObjectInput{Bucket: &u.bucket, Key: &k, Body: strings.NewReader("")})

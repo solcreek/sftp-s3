@@ -332,3 +332,92 @@ func TestPrefix(t *testing.T) {
 		t.Fatal("object not written under the configured prefix")
 	}
 }
+
+// Users may live in buckets of their own, at the bucket root or under a
+// prefix, and still never reach another user's files.
+func TestUsersOnTheirOwnBuckets(t *testing.T) {
+	const other = "other-bucket"
+	var own *s3.Client
+	e := newEnv(t, func(c *Config) {
+		own = c.Client
+		c.Users["carol"] = User{Password: "carol-pw", Bucket: other} // the bucket root
+		c.Users["dave"] = User{Password: "dave-pw", Bucket: c.Bucket, Root: c.Prefix + "incoming/"}
+	})
+	if e.seen == nil {
+		t.Skip("needs a second bucket: in-memory store only")
+	}
+	ctx := context.Background()
+	if _, err := own.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(other)}); err != nil {
+		t.Fatal(err)
+	}
+	inOther := func(key string) bool {
+		_, err := own.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(other), Key: aws.String(key)})
+		return err == nil
+	}
+
+	upload(t, e.sftp("alice"), "/secret.txt", []byte("alice only"))
+	carol, dave := e.sftp("carol"), e.sftp("dave")
+
+	// carol: the root of her own bucket.
+	upload(t, carol, "/a.txt", []byte("a"))
+	if err := carol.Mkdir("/d"); err != nil {
+		t.Fatal(err)
+	}
+	if !inOther("a.txt") || !inOther("d/") {
+		t.Fatal("carol's files are not at the root of her bucket")
+	}
+	if got := names(t, carol, "/"); !slices.Equal(got, []string{"a.txt", "d/"}) {
+		t.Fatalf("carol's root lists %v", got)
+	}
+	if got := download(t, carol, "/a.txt"); string(got) != "a" {
+		t.Fatalf("carol read %q", got)
+	}
+	// Traversal and renames stay in her bucket.
+	upload(t, carol, "../../x.txt", []byte("x"))
+	if err := carol.Rename("/a.txt", "/../"+e.bucket+"/a.txt"); err != nil {
+		t.Fatal(err)
+	}
+	if !inOther("x.txt") || !inOther(e.bucket+"/a.txt") {
+		t.Fatal("carol's traversal or rename left her bucket")
+	}
+	if _, ok := e.object("a.txt"); ok {
+		t.Fatal("carol's rename reached the default bucket")
+	}
+	if _, err := carol.Open("/../alice/secret.txt"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("carol opened alice's file: %v", err)
+	}
+	// The root itself has no key at the bucket root: it cannot be changed.
+	for name, op := range map[string]func() error{
+		"Mkdir /":           func() error { return carol.Mkdir("/") },
+		"Remove /":          func() error { return carol.Remove("/") },
+		"RemoveDirectory /": func() error { return carol.RemoveDirectory("/") },
+		"Rename / to /y":    func() error { return carol.Rename("/", "/y") },
+		"Rename to /":       func() error { return carol.Rename("/x.txt", "/") },
+		"Create /": func() error {
+			f, err := carol.Create("/")
+			if err == nil {
+				err = f.Close()
+			}
+			return err
+		},
+	} {
+		if err := op(); !errors.Is(err, os.ErrPermission) {
+			t.Errorf("%s: err = %v, want permission denied", name, err)
+		}
+	}
+	if !inOther("x.txt") {
+		t.Fatal("a refused operation on / removed x.txt")
+	}
+
+	// dave: a prefix in the default bucket, beside alice's tree.
+	upload(t, dave, "/b.txt", []byte("b"))
+	if _, ok := e.object("incoming/b.txt"); !ok {
+		t.Fatal("dave's file is not under incoming/")
+	}
+	if got := names(t, dave, "/"); !slices.Equal(got, []string{"b.txt"}) {
+		t.Fatalf("dave's root lists %v", got)
+	}
+	if _, err := dave.Open("/../alice/secret.txt"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("dave opened alice's file: %v", err)
+	}
+}

@@ -18,7 +18,8 @@ import (
 )
 
 // Config describes one gateway. Users maps a login name to its
-// credentials; each user is confined to s3://Bucket/Prefix<user>/.
+// credentials and location. A user without a Bucket of its own is confined
+// to s3://Bucket/Prefix<user>/; Bucket may be empty when every user has one.
 type Config struct {
 	Client     *s3.Client
 	Bucket     string
@@ -67,8 +68,6 @@ func New(cfg Config) (*Server, error) {
 	switch {
 	case cfg.Client == nil:
 		return nil, errors.New("gateway: S3 client is required")
-	case cfg.Bucket == "":
-		return nil, errors.New("gateway: bucket is required")
 	case len(cfg.Users) == 0:
 		return nil, errors.New("gateway: at least one user is required")
 	case cfg.HostKey == nil:
@@ -95,6 +94,9 @@ func New(cfg Config) (*Server, error) {
 	for name, u := range cfg.Users {
 		if err := u.validate(); err != nil {
 			return nil, fmt.Errorf("gateway: user %q: %w", name, err)
+		}
+		if u.Bucket == "" && cfg.Bucket == "" {
+			return nil, fmt.Errorf("gateway: user %q has no bucket, and there is no default bucket", name)
 		}
 	}
 	auth := authenticator{users: cfg.Users, delay: cfg.AuthFailDelay}
@@ -164,10 +166,10 @@ func (s *Server) handleConn(nc net.Conn) {
 	if fp, ok := sc.Permissions.Extensions["pubkey-fp"]; ok {
 		method = fp
 	}
-	slog.Info("login", "user", sc.User(), "remote", nc.RemoteAddr(), "auth", method)
+	fs := s.userFS(sc.User())
+	slog.Info("login", "user", sc.User(), "remote", nc.RemoteAddr(), "auth", method, "bucket", fs.bucket, "root", fs.root)
 	go ssh.DiscardRequests(reqs)
 
-	fs := s.userFS(sc.User())
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	for nch := range chans {
@@ -224,9 +226,13 @@ func isSFTP(payload []byte) bool {
 	return ssh.Unmarshal(payload, &p) == nil && p.Name == "sftp"
 }
 
-func (s *Server) userFS(user string) *userFS {
-	return &userFS{
-		client: s.cfg.Client, bucket: s.cfg.Bucket, root: s.cfg.Prefix + user + "/",
+func (s *Server) userFS(name string) *userFS {
+	fs := &userFS{
+		client: s.cfg.Client, bucket: s.cfg.Bucket, root: s.cfg.Prefix + name + "/",
 		partSize: s.cfg.PartSize, maxReorder: s.cfg.MaxReorder,
 	}
+	if u := s.cfg.Users[name]; u.Bucket != "" {
+		fs.bucket, fs.root = u.Bucket, u.Root
+	}
+	return fs
 }

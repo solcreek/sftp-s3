@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	"errors"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -13,10 +15,16 @@ import (
 
 // User holds one login's credentials: a password (plaintext or a bcrypt
 // hash, at most one of them), public keys, or both.
+//
+// Bucket and Root say where the user's files live: s3://Bucket/Root, where
+// Root is "" for the bucket root or a key prefix ending in "/". Without a
+// Bucket the user lives at s3://Config.Bucket/Config.Prefix<name>/.
 type User struct {
 	Password     string // plaintext; meant for quick starts
 	PasswordHash string // bcrypt ($2a$, $2b$ or $2y$)
 	Keys         []ssh.PublicKey
+	Bucket       string
+	Root         string
 }
 
 func (u User) validate() error {
@@ -30,6 +38,26 @@ func (u User) validate() error {
 		if _, err := bcrypt.Cost([]byte(u.PasswordHash)); err != nil {
 			return fmt.Errorf("password hash: %w", err)
 		}
+	}
+	switch {
+	case u.Bucket == "" && u.Root != "":
+		return errors.New("a root without a bucket")
+	case strings.Contains(u.Bucket, "/"):
+		return fmt.Errorf("bucket %q contains '/'", u.Bucket)
+	}
+	return validRoot(u.Root)
+}
+
+// validRoot accepts "" (the bucket root) or a clean key prefix ending in
+// "/", such as "a/b/". Anything else could make two users' trees overlap in
+// ways their configuration does not show, or produce keys like "a//b".
+func validRoot(root string) error {
+	if root == "" {
+		return nil
+	}
+	if !strings.HasSuffix(root, "/") || strings.HasPrefix(root, "/") ||
+		path.Clean("/"+root) != "/"+strings.TrimSuffix(root, "/") {
+		return fmt.Errorf("prefix %q must be empty or a clean path ending in '/', like \"a/b/\"", root)
 	}
 	return nil
 }

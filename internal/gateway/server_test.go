@@ -2,9 +2,9 @@ package gateway
 
 import (
 	"bytes"
-	"encoding/json"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -40,6 +40,27 @@ func TestNewValidatesConfig(t *testing.T) {
 		},
 		"password hash:": func(c *Config) { c.Users = map[string]User{"u": {PasswordHash: "$2a$not-a-hash"}} },
 		"host key":       func(c *Config) { c.HostKey = nil },
+		"a root without a bucket": func(c *Config) {
+			c.Users = map[string]User{"u": {Password: "p", Root: "x/"}}
+		},
+		"contains '/'": func(c *Config) {
+			c.Users = map[string]User{"u": {Password: "p", Bucket: "a/b"}}
+		},
+	}
+	for _, root := range []string{"x", "/x/", "x//", "x/../y/", "./x/", "x/./", "/"} {
+		cfg := valid()
+		cfg.Users = map[string]User{"u": {Password: "p", Bucket: "b2", Root: root}}
+		if _, err := New(cfg); err == nil || !strings.Contains(err.Error(), "prefix") {
+			t.Errorf("root %q: err = %v, want a prefix error", root, err)
+		}
+	}
+	for _, root := range []string{"", "x/", "a/b-c/d.e/"} {
+		cfg := valid()
+		cfg.Bucket = "" // every user has a bucket of its own
+		cfg.Users = map[string]User{"u": {Password: "p", Bucket: "b2", Root: root}}
+		if _, err := New(cfg); err != nil {
+			t.Errorf("root %q: %v", root, err)
+		}
 	}
 	for missing, mutate := range tests {
 		cfg := valid()
