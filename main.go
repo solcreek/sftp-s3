@@ -86,10 +86,14 @@ func main() {
 // variables only; done reports that the process should exit with code, and
 // check that it should validate the configuration instead of serving.
 func parseFlags(args []string, stdin io.Reader, stdout, stderr io.Writer) (check bool, code int, done bool) {
+	// Subcommands come first: the flags below take no positional arguments.
+	if len(args) > 0 && args[0] == "import-sftpgo" {
+		return false, importSFTPGo(args[1:], stdout, stderr), true
+	}
 	fs := flag.NewFlagSet("sftp-s3", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintf(stderr, "Usage: sftp-s3 [-check | -version | -hash-password]\n\nAn SFTP server backed by S3, configured through environment variables:\nhttps://github.com/solcreek/sftp-s3#configuration\n\n")
+		fmt.Fprintf(stderr, "Usage: sftp-s3 [-check | -version | -hash-password]\n       sftp-s3 import-sftpgo <dump.json>\n\nAn SFTP server backed by S3, configured through environment variables:\nhttps://github.com/solcreek/sftp-s3#configuration\n\n")
 		fs.PrintDefaults()
 	}
 	showVersion := fs.Bool("version", false, "print the version and exit")
