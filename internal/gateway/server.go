@@ -216,8 +216,14 @@ func (s *Server) handleConn(nc net.Conn) {
 		slog.Log(context.Background(), handshakeLogLevel(err), "handshake failed", "remote", nc.RemoteAddr(), "err", err)
 		return
 	}
-	nc.SetDeadline(time.Time{}) // logged in: sessions may idle and transfer as long as they like
 	defer sc.Close()
+	// ssh caches public-key results per connection, so a key accepted before
+	// a ban can still complete the login after it: check once more.
+	if s.bans.banned(nc.RemoteAddr()) {
+		slog.Info("login refused: client was banned during the login", "user", sc.User(), "remote", nc.RemoteAddr())
+		return
+	}
+	nc.SetDeadline(time.Time{}) // logged in: sessions may idle and transfer as long as they like
 	method := "password"
 	ext := sc.Permissions.Extensions
 	if fp, ok := ext[extKeyFP]; ok {
