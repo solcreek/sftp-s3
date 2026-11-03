@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/crypto/ssh"
@@ -166,6 +167,8 @@ func convertSFTPGoUser(su sftpgoUser, warn io.Writer) (importedUser, bool) {
 	switch {
 	case su.Status != 1:
 		return skip("disabled in SFTPGo")
+	case su.ExpirationDate > 0 && su.ExpirationDate < time.Now().UnixMilli():
+		return skip("expired in SFTPGo")
 	case slices.Contains(su.Filters.DeniedProtocols, "SSH"):
 		return skip("SFTP (protocol SSH) is denied in SFTPGo")
 	case slices.Contains(su.Filters.TwoFactorProtocols, "SSH") ||
