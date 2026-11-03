@@ -49,7 +49,25 @@ result of a real failure:
 
 ## Port 22 on the internet
 
-- A wrong password is answered after 1 s.
+- A wrong password is answered after 1 s. A connection gets at most
+  `SFTP_MAX_AUTH_TRIES` (6) login attempts.
+- A client IP (IPv4 address or IPv6 /64) with `SFTP_BAN_THRESHOLD` (10)
+  failed logins within `SFTP_BAN_WINDOW` (10 min) is banned for
+  `SFTP_BAN_DURATION` (15 min), doubling on each repeat ban up to
+  `SFTP_BAN_MAX_DURATION` (24 h). The ban is checked right after the PROXY
+  header, if any, and before the SSH handshake, so a banned connection is
+  closed before any key exchange or bcrypt work; a ban also refuses logins
+  already under way. Failures are wrong passwords, plus one for a connection
+  that tried a method and ended without logging in and without a wrong
+  password (so a client offering many keys counts once). Connections that
+  never try (health checks, port scans) are not counted: NLB health checks
+  come from fixed addresses, and banning them would take the service down.
+  The table is swept of expired clients and capped at 10,000 entries. Bans
+  and unbans are logged; refused connections only at debug level.
+  State is per process: replicas ban independently. Without real client
+  addresses (a TCP proxy without the PROXY protocol), every client shares
+  the proxy's address and a ban would lock everyone out; turn bans off
+  there (`SFTP_BAN_THRESHOLD=0`).
 - The SSH handshake and login must finish within 30 s.
 - Connections are capped (`SFTP_MAX_CONNECTIONS`). Excess ones are closed
   at once; the warning is logged at most every 10 s.
