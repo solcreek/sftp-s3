@@ -151,7 +151,7 @@ func TestRunServesHealthAndMetrics(t *testing.T) {
 		}))
 	}()
 	sftpRE := regexp.MustCompile(`msg=listening .*addr=\S*:(\d+)`)
-	httpRE := regexp.MustCompile(`msg="metrics listening" addr=(\S+)`)
+	httpRE := regexp.MustCompile(`msg="http listening" addr=(\S+)`)
 	var sftpPort, httpAddr string
 	waitFor(t, func() bool {
 		s, h := sftpRE.FindStringSubmatch(logs.String()), httpRE.FindStringSubmatch(logs.String())
@@ -257,7 +257,7 @@ func TestRunWithoutMetricsAddr(t *testing.T) {
 	if err := run(ctx, envMap(map[string]string{"S3_BUCKET": "b", "SFTP_USERS": "a:b", "PORT": "0"})); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(logs.String(), "msg=listening") || strings.Contains(logs.String(), "metrics listening") {
+	if !strings.Contains(logs.String(), "msg=listening") || strings.Contains(logs.String(), "http listening") {
 		t.Errorf("logs:\n%s", logs.String())
 	}
 }
