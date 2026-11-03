@@ -343,6 +343,12 @@ func TestConvertSFTPGo(t *testing.T) {
 			warn: []string{`skipped user "g": storage provider 2 is not S3`},
 		},
 		{
+			name:  "listed twice",
+			users: []string{s3User("a", ""), s3User("a", fs(`"bucket": "other"`))},
+			want:  map[string]string{"a": `"bucket": "b"`},
+			warn:  []string{`skipped user "a": listed twice in the dump; the first entry is kept`},
+		},
+		{
 			// SFTPGo refuses login once expiration_date (ms since the
 			// epoch) has passed; a future date is only warned about.
 			name: "expired",

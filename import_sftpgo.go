@@ -129,8 +129,16 @@ func convertSFTPGo(data []byte, warn io.Writer) ([]byte, error) {
 		out     importedFile
 		regions = map[string][]string{} // region -> imported users
 		ends    = map[string][]string{} // endpoint -> imported users
+		seen    = map[string]bool{}     // every name in the dump so far
 	)
 	for _, su := range *dump.Users {
+		// SFTPGo keeps names unique, but a hand-edited dump might not; one
+		// repeat would make the users file refuse to load as a whole.
+		if seen[su.Username] {
+			fmt.Fprintf(warn, "skipped user %q: listed twice in the dump; the first entry is kept\n", su.Username)
+			continue
+		}
+		seen[su.Username] = true
 		u, ok := convertSFTPGoUser(su, warn)
 		if !ok {
 			continue
