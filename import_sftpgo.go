@@ -47,6 +47,13 @@ type sftpgoUser struct {
 		DeniedIP           []string `json:"denied_ip"`
 		DeniedLoginMethods []string `json:"denied_login_methods"`
 		DeniedProtocols    []string `json:"denied_protocols"`
+		TwoFactorProtocols []string `json:"two_factor_protocols"`
+		// Only whether TOTP is on, and for which protocols; the secret
+		// next to these fields is not decoded.
+		TOTP struct {
+			Enabled   bool     `json:"enabled"`
+			Protocols []string `json:"protocols"`
+		} `json:"totp_config"`
 	} `json:"filters"`
 	Filesystem struct {
 		Provider int `json:"provider"`
@@ -161,6 +168,12 @@ func convertSFTPGoUser(su sftpgoUser, warn io.Writer) (importedUser, bool) {
 		return skip("disabled in SFTPGo")
 	case slices.Contains(su.Filters.DeniedProtocols, "SSH"):
 		return skip("SFTP (protocol SSH) is denied in SFTPGo")
+	case slices.Contains(su.Filters.TwoFactorProtocols, "SSH") ||
+		su.Filters.TOTP.Enabled && slices.Contains(su.Filters.TOTP.Protocols, "SSH"):
+		// The gateway has no second factor. A user who has set one up
+		// for SSH would lose it; one who is required to but has not
+		// cannot log in to SFTPGo over SSH at all.
+		return skip("two-factor authentication over SSH is required in SFTPGo")
 	case su.Filesystem.Provider != sftpgoS3Provider:
 		return skip(fmt.Sprintf("storage provider %d is not S3", su.Filesystem.Provider))
 	case s3.Bucket == "":
