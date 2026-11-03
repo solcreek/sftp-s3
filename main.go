@@ -173,7 +173,7 @@ func runCheck(ctx context.Context, getenv func(string) string, out io.Writer) er
 		}
 	}
 	fmt.Fprintf(out, "users: %d (%d keys, %d hashed passwords, %d plaintext passwords)\n", len(cfg.Users), keys, hashed, plain)
-	fmt.Fprintf(out, "host key: %s\n", ssh.FingerprintSHA256(cfg.HostKey.PublicKey()))
+	fmt.Fprintf(out, "host key: %s\n", ssh.FingerprintSHA256(cfg.HostKeys[0].PublicKey()))
 	for _, b := range buckets(cfg) {
 		if _, err := cfg.Client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &b}); err != nil {
 			return fmt.Errorf("bucket %q: %w", b, err)
@@ -215,7 +215,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 		return err
 	}
 	slog.Info("listening", "version", version, "addr", ln.Addr().String(), "buckets", strings.Join(buckets(cfg), ","),
-		"fingerprint", ssh.FingerprintSHA256(cfg.HostKey.PublicKey()))
+		"fingerprint", ssh.FingerprintSHA256(cfg.HostKeys[0].PublicKey()))
 	go func() {
 		<-ctx.Done()
 		slog.Info("shutting down; waiting for open sessions")
@@ -281,9 +281,11 @@ func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config
 	if err != nil {
 		return cfg, err
 	}
-	if cfg.HostKey, err = hostKey(key); err != nil {
+	hk, err := hostKey(key)
+	if err != nil {
 		return cfg, err
 	}
+	cfg.HostKeys = []ssh.Signer{hk}
 	if mb := getenv("S3_PART_SIZE_MB"); mb != "" {
 		n, err := strconv.Atoi(mb)
 		if err != nil || n < 5 || n > 5120 {

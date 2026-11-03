@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -25,7 +26,7 @@ type Config struct {
 	Bucket     string
 	Prefix     string
 	Users      map[string]User
-	HostKey    ssh.Signer
+	HostKeys   []ssh.Signer
 	PartSize   int64 // multipart part size; 0 means 8 MiB
 	MaxReorder int64 // out-of-order bytes buffered per upload; 0 means 64 MiB
 
@@ -63,15 +64,19 @@ type Server struct {
 	slots  chan struct{} // one per open connection
 }
 
-// New validates cfg and builds a Server.
+// New validates cfg and builds a Server. It needs at least one host key and
+// offers them all; give at most one per key type, since ssh keeps only the
+// last key of a type.
 func New(cfg Config) (*Server, error) {
 	switch {
 	case cfg.Client == nil:
 		return nil, errors.New("gateway: S3 client is required")
 	case len(cfg.Users) == 0:
 		return nil, errors.New("gateway: at least one user is required")
-	case cfg.HostKey == nil:
+	case len(cfg.HostKeys) == 0:
 		return nil, errors.New("gateway: host key is required")
+	case slices.Contains(cfg.HostKeys, nil):
+		return nil, errors.New("gateway: host key is nil")
 	}
 	if cfg.PartSize == 0 {
 		cfg.PartSize = 8 << 20
@@ -104,7 +109,9 @@ func New(cfg Config) (*Server, error) {
 		PasswordCallback:  auth.password,
 		PublicKeyCallback: auth.publicKey,
 	}
-	sshCfg.AddHostKey(cfg.HostKey)
+	for _, k := range cfg.HostKeys {
+		sshCfg.AddHostKey(k)
+	}
 	return &Server{cfg: cfg, sshCfg: sshCfg, slots: make(chan struct{}, cfg.MaxConns)}, nil
 }
 

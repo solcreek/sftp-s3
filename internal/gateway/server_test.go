@@ -27,7 +27,7 @@ func TestNewValidatesConfig(t *testing.T) {
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
 	signer, _ := ssh.NewSignerFromKey(priv)
 	valid := func() Config {
-		return Config{Client: &s3.Client{}, Bucket: "b", Users: map[string]User{"u": {Password: "p"}}, HostKey: signer}
+		return Config{Client: &s3.Client{}, Bucket: "b", Users: map[string]User{"u": {Password: "p"}}, HostKeys: []ssh.Signer{signer}}
 	}
 	tests := map[string]func(*Config){
 		"client":                   func(c *Config) { c.Client = nil },
@@ -38,8 +38,9 @@ func TestNewValidatesConfig(t *testing.T) {
 		"both a password and a password hash": func(c *Config) {
 			c.Users = map[string]User{"u": {Password: "p", PasswordHash: "$2a$04$abcdefghijklmnopqrstuuJ5Qo3b1T6p2Q9xWZ9b2nE0m5n7lWcm"}}
 		},
-		"password hash:": func(c *Config) { c.Users = map[string]User{"u": {PasswordHash: "$2a$not-a-hash"}} },
-		"host key":       func(c *Config) { c.HostKey = nil },
+		"password hash:":       func(c *Config) { c.Users = map[string]User{"u": {PasswordHash: "$2a$not-a-hash"}} },
+		"host key is required": func(c *Config) { c.HostKeys = nil },
+		"host key is nil":      func(c *Config) { c.HostKeys = []ssh.Signer{signer, nil} },
 		"a root without a bucket": func(c *Config) {
 			c.Users = map[string]User{"u": {Password: "p", Root: "x/"}}
 		},
@@ -435,7 +436,7 @@ func (failingListener) Accept() (net.Conn, error) {
 func TestServeReturnsAcceptErrors(t *testing.T) {
 	_, priv, _ := ed25519.GenerateKey(rand.Reader)
 	signer, _ := ssh.NewSignerFromKey(priv)
-	srv, err := New(Config{Client: &s3.Client{}, Bucket: "b", Users: map[string]User{"u": {Password: "p"}}, HostKey: signer})
+	srv, err := New(Config{Client: &s3.Client{}, Bucket: "b", Users: map[string]User{"u": {Password: "p"}}, HostKeys: []ssh.Signer{signer}})
 	if err != nil {
 		t.Fatal(err)
 	}
