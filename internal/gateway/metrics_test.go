@@ -517,3 +517,38 @@ func TestWriteMetricsReportsWriteErrors(t *testing.T) {
 		t.Fatal("write error not returned")
 	}
 }
+
+// Serving is false before Serve and once the listener closes, while open
+// sessions still drain.
+func TestServing(t *testing.T) {
+	e := newEnv(t)
+	idle, err := New(e.srv.cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if idle.Serving() {
+		t.Error("Serving before Serve")
+	}
+	c, conn := e.session()
+	defer conn.Close()
+	if !e.srv.Serving() {
+		t.Fatal("not Serving while accepting")
+	}
+	e.ln.Close() // shutdown begins
+	deadline := time.Now().Add(5 * time.Second)
+	for e.srv.Serving() {
+		if time.Now().After(deadline) {
+			t.Fatal("still Serving after the listener closed")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if _, err := c.Getwd(); err != nil {
+		t.Fatalf("open session broke while draining: %v", err)
+	}
+	c.Close()
+	conn.Close()
+	e.stop()
+	if e.srv.Serving() {
+		t.Error("Serving after Serve returned")
+	}
+}
