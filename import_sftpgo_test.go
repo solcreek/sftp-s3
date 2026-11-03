@@ -343,6 +343,18 @@ func TestConvertSFTPGo(t *testing.T) {
 			warn: []string{`skipped user "g": storage provider 2 is not S3`},
 		},
 		{
+			// A user who gets their S3 settings from a group is skipped,
+			// and the message says where those settings would have been.
+			name: "storage from a group",
+			users: []string{
+				`{"username": "g", "status": 1, "password": "` + testHash + `", "filesystem": {"provider": 0},
+				  "groups": [{"name": "s3users", "type": 1}, {"name": "ops", "type": 2}]}`,
+				s3User("ok", ""),
+			},
+			want: map[string]string{"ok": `"ok"`},
+			warn: []string{`skipped user "g": storage provider 0 is not S3 (member of groups s3users, ops; settings from groups are not read)`},
+		},
+		{
 			name:  "listed twice",
 			users: []string{s3User("a", ""), s3User("a", fs(`"bucket": "other"`))},
 			want:  map[string]string{"a": `"bucket": "b"`},

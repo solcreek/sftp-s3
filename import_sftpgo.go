@@ -164,7 +164,16 @@ func convertSFTPGo(data []byte, warn io.Writer) ([]byte, error) {
 // convertSFTPGoUser converts one user, or reports why it was skipped.
 func convertSFTPGoUser(su sftpgoUser, warn io.Writer) (importedUser, bool) {
 	name := su.Username
+	var groups []string
+	for _, g := range su.Groups {
+		groups = append(groups, g.Name)
+	}
+	// A group can supply the user's storage and filters, which the import
+	// does not read; a skip names the groups so that is not a mystery.
 	skip := func(why string) (importedUser, bool) {
+		if len(groups) > 0 {
+			why += fmt.Sprintf(" (member of groups %s; settings from groups are not read)", strings.Join(groups, ", "))
+		}
 		fmt.Fprintf(warn, "skipped user %q: %s\n", name, why)
 		return importedUser{}, false
 	}
@@ -242,11 +251,7 @@ func convertSFTPGoUser(su sftpgoUser, warn io.Writer) (importedUser, bool) {
 	if !fullAccess(su.Permissions) {
 		note("permissions other than full access not carried over; the user gets full access to their prefix")
 	}
-	if len(su.Groups) > 0 {
-		var groups []string
-		for _, g := range su.Groups {
-			groups = append(groups, g.Name)
-		}
+	if len(groups) > 0 {
 		note("member of groups %s; settings from groups not carried over", strings.Join(groups, ", "))
 	}
 	if su.ExpirationDate != 0 {
