@@ -4,13 +4,14 @@ All notable changes are listed here. The project follows
 [Semantic Versioning](https://semver.org/); before 1.0, minor versions may
 break configuration.
 
-## Unreleased
+## 0.1.0 — 2026-11-02
 
-First public release candidate.
+First public release.
 
 - SFTP server backed by S3: streaming multipart uploads, ranged downloads,
   directories, rename, and per-user prefixes.
-- S3-compatible stores: AWS S3, Google Cloud Storage, Cloudflare R2, MinIO.
+- S3-compatible stores: AWS S3, Google Cloud Storage, Cloudflare R2, MinIO,
+  RustFS, SeaweedFS and versitygw.
 - Users: public keys (authorized_keys format), bcrypt hashes or plaintext
   passwords in `SFTP_USERS`; several keys per user.
 - `SFTP_USERS_FILE` and `SFTP_HOST_KEY_FILE` for Docker and Kubernetes
