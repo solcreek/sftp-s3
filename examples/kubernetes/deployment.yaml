@@ -71,7 +71,7 @@ spec:
               path: /healthz
               port: http
             periodSeconds: 5
-            failureThreshold: 1
+            failureThreshold: 2 # ride out one slow probe; a drain is still seen within ~10 s
           # Liveness stays a TCP check on the SFTP port: it must keep passing
           # during the drain, or the kubelet would kill uploads in flight.
           livenessProbe:
