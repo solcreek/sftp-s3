@@ -38,6 +38,7 @@ func TestMain(m *testing.M) {
 // env is one gateway serving on a loopback port, backed by an in-memory S3.
 type env struct {
 	t      *testing.T
+	srv    *Server
 	s3     *s3.Client
 	addr   string
 	hostPK ssh.PublicKey
@@ -93,7 +94,7 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 			t.Errorf("Serve: %v", err)
 		}
 	})
-	return &env{t: t, s3: client, addr: ln.Addr().String(), hostPK: signer.PublicKey(), seen: seen, bucket: bucket, base: base}
+	return &env{t: t, srv: srv, s3: client, addr: ln.Addr().String(), hostPK: signer.PublicKey(), seen: seen, bucket: bucket, base: base}
 }
 
 func (e *env) sshDial(user, pass string) (*ssh.Client, error) {

@@ -68,13 +68,14 @@ func validRoot(root string) error {
 // for quick starts and skip it.)
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy"), bcrypt.DefaultCost)
 
+// authenticator.users returns the current set; see Server.SetUsers.
 type authenticator struct {
-	users map[string]User
+	users func() map[string]User
 	delay time.Duration // after a wrong password
 }
 
 func (a authenticator) password(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
-	u, ok := a.users[c.User()]
+	u, ok := a.users()[c.User()]
 	var good bool
 	switch {
 	case ok && u.PasswordHash != "":
@@ -94,7 +95,7 @@ func (a authenticator) password(c ssh.ConnMetadata, pass []byte) (*ssh.Permissio
 // publicKey is not delayed on failure: clients offer every key they hold,
 // one after another, and keys cannot be guessed.
 func (a authenticator) publicKey(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
-	if u, ok := a.users[c.User()]; ok {
+	if u, ok := a.users()[c.User()]; ok {
 		offered := key.Marshal()
 		for _, k := range u.Keys {
 			if bytes.Equal(k.Marshal(), offered) {

@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"net"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -19,7 +21,8 @@ import (
 )
 
 // Config describes one gateway. Users maps a login name to its
-// credentials and location. A user without a Bucket of its own is confined
+// credentials and location; it is the initial set, which Server.SetUsers
+// replaces. A user without a Bucket of its own is confined
 // to s3://Bucket/Prefix<user>/; Bucket may be empty when every user has one.
 type Config struct {
 	Client     *s3.Client
@@ -62,6 +65,7 @@ type Server struct {
 	sshCfg *ssh.ServerConfig
 	wg     sync.WaitGroup
 	slots  chan struct{} // one per open connection
+	users  atomic.Pointer[map[string]User]
 }
 
 // New validates cfg and builds a Server. It needs at least one host key and
@@ -71,8 +75,6 @@ func New(cfg Config) (*Server, error) {
 	switch {
 	case cfg.Client == nil:
 		return nil, errors.New("gateway: S3 client is required")
-	case len(cfg.Users) == 0:
-		return nil, errors.New("gateway: at least one user is required")
 	case len(cfg.HostKeys) == 0:
 		return nil, errors.New("gateway: host key is required")
 	case slices.Contains(cfg.HostKeys, nil):
@@ -96,24 +98,43 @@ func New(cfg Config) (*Server, error) {
 	if cfg.AuthFailDelay == 0 {
 		cfg.AuthFailDelay = time.Second
 	}
-	for name, u := range cfg.Users {
-		if err := u.validate(); err != nil {
-			return nil, fmt.Errorf("gateway: user %q: %w", name, err)
-		}
-		if u.Bucket == "" && cfg.Bucket == "" {
-			return nil, fmt.Errorf("gateway: user %q has no bucket, and there is no default bucket", name)
-		}
+	s := &Server{cfg: cfg, slots: make(chan struct{}, cfg.MaxConns)}
+	if err := s.SetUsers(cfg.Users); err != nil {
+		return nil, err
 	}
-	auth := authenticator{users: cfg.Users, delay: cfg.AuthFailDelay}
-	sshCfg := &ssh.ServerConfig{
+	auth := authenticator{users: s.currentUsers, delay: cfg.AuthFailDelay}
+	s.sshCfg = &ssh.ServerConfig{
 		PasswordCallback:  auth.password,
 		PublicKeyCallback: auth.publicKey,
 	}
 	for _, k := range cfg.HostKeys {
-		sshCfg.AddHostKey(k)
+		s.sshCfg.AddHostKey(k)
 	}
-	return &Server{cfg: cfg, sshCfg: sshCfg, slots: make(chan struct{}, cfg.MaxConns)}, nil
+	return s, nil
 }
+
+// SetUsers replaces the users, validated as New validates Config.Users.
+// On error the current users stay. New logins see the new set at once;
+// connections already logged in keep the bucket and root they got at login.
+// It is safe to call while the server is serving.
+func (s *Server) SetUsers(users map[string]User) error {
+	if len(users) == 0 {
+		return errors.New("gateway: at least one user is required")
+	}
+	for name, u := range users {
+		if err := u.validate(); err != nil {
+			return fmt.Errorf("gateway: user %q: %w", name, err)
+		}
+		if u.Bucket == "" && s.cfg.Bucket == "" {
+			return fmt.Errorf("gateway: user %q has no bucket, and there is no default bucket", name)
+		}
+	}
+	m := maps.Clone(users) // the caller may go on to change its map
+	s.users.Store(&m)
+	return nil
+}
+
+func (s *Server) currentUsers() map[string]User { return *s.users.Load() }
 
 // Serve accepts connections until ln is closed, then waits for open
 // sessions to finish. It returns nil when ln was closed.
@@ -173,7 +194,12 @@ func (s *Server) handleConn(nc net.Conn) {
 	if fp, ok := sc.Permissions.Extensions["pubkey-fp"]; ok {
 		method = fp
 	}
-	fs := s.userFS(sc.User())
+	fs, ok := s.userFS(sc.User())
+	if !ok {
+		// Removed by SetUsers between authentication and here.
+		slog.Info("login refused: user removed during login", "user", sc.User(), "remote", nc.RemoteAddr())
+		return
+	}
 	slog.Info("login", "user", sc.User(), "remote", nc.RemoteAddr(), "auth", method, "bucket", fs.bucket, "root", fs.root)
 	go ssh.DiscardRequests(reqs)
 
@@ -233,13 +259,19 @@ func isSFTP(payload []byte) bool {
 	return ssh.Unmarshal(payload, &p) == nil && p.Name == "sftp"
 }
 
-func (s *Server) userFS(name string) *userFS {
-	fs := &userFS{
+// userFS returns the filesystem of the named user in the current set, or
+// ok=false if there is no such user.
+func (s *Server) userFS(name string) (fs *userFS, ok bool) {
+	u, ok := s.currentUsers()[name]
+	if !ok {
+		return nil, false
+	}
+	fs = &userFS{
 		client: s.cfg.Client, bucket: s.cfg.Bucket, root: s.cfg.Prefix + name + "/",
 		partSize: s.cfg.PartSize, maxReorder: s.cfg.MaxReorder,
 	}
-	if u := s.cfg.Users[name]; u.Bucket != "" {
+	if u.Bucket != "" {
 		fs.bucket, fs.root = u.Bucket, u.Root
 	}
-	return fs
+	return fs, true
 }
