@@ -164,6 +164,10 @@ func runCheck(ctx context.Context, getenv func(string) string, out io.Writer) er
 	if _, err := gateway.New(cfg); err != nil {
 		return err
 	}
+	httpAddr, err := metricsAddr(getenv)
+	if err != nil {
+		return err
+	}
 	var keys, hashed, plain int
 	for _, u := range cfg.Users {
 		keys += len(u.Keys)
@@ -183,6 +187,9 @@ func runCheck(ctx context.Context, getenv func(string) string, out io.Writer) er
 			return fmt.Errorf("bucket %q: %w", b, err)
 		}
 		fmt.Fprintf(out, "bucket: %s reachable\n", b)
+	}
+	if httpAddr != "" {
+		fmt.Fprintf(out, "http listener: %s (/healthz, /metrics)\n", httpAddr)
 	}
 	fmt.Fprintln(out, "ok")
 	return nil
@@ -209,6 +216,10 @@ func run(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
+	httpAddr, err := metricsAddr(getenv)
+	if err != nil {
+		return err
+	}
 	srv, err := gateway.New(cfg)
 	if err != nil {
 		return err
@@ -222,6 +233,17 @@ func run(ctx context.Context, getenv func(string) string) error {
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
+	}
+	// The HTTP listener outlives the SFTP one: during the drain /healthz
+	// reports 503, and it closes only as run returns.
+	if httpAddr != "" {
+		stopHTTP, bound, err := serveHTTP(httpAddr, newHTTPHandler(srv))
+		if err != nil {
+			ln.Close()
+			return err
+		}
+		defer stopHTTP()
+		slog.Info("metrics listening", "addr", bound)
 	}
 	for _, k := range cfg.HostKeys {
 		slog.Info("host key", "type", k.PublicKey().Type(), "fingerprint", ssh.FingerprintSHA256(k.PublicKey()))
@@ -321,6 +343,7 @@ func orDefault(v, def string) string {
 // the AWS SDK's default chain (AWS_ACCESS_KEY_ID/..., profiles, IAM roles).
 func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config, error) {
 	var cfg gateway.Config
+	cfg.Version = version
 	cfg.Bucket = getenv("S3_BUCKET")
 	cfg.Prefix = getenv("S3_PREFIX")
 	var err error

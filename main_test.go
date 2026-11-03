@@ -294,6 +294,20 @@ func TestRunCheck(t *testing.T) {
 		}
 	}
 
+	if strings.Contains(out.String(), "http listener") {
+		t.Errorf("an HTTP listener without SFTP_METRICS_ADDR:\n%s", out.String())
+	}
+	env["SFTP_METRICS_ADDR"] = "127.0.0.1:9090"
+	out.Reset()
+	if err := runCheck(context.Background(), envMap(env), &out); err != nil || !strings.Contains(out.String(), "http listener: 127.0.0.1:9090 (/healthz, /metrics)") {
+		t.Errorf("SFTP_METRICS_ADDR: err = %v\n%s", err, out.String())
+	}
+	env["SFTP_METRICS_ADDR"] = ":2222"
+	if err := runCheck(context.Background(), envMap(env), io.Discard); err == nil || !strings.Contains(err.Error(), "SFTP_METRICS_ADDR") {
+		t.Errorf("SFTP_METRICS_ADDR on the SFTP port: err = %v", err)
+	}
+	delete(env, "SFTP_METRICS_ADDR")
+
 	env["S3_BUCKET"] = "missing"
 	if err := runCheck(context.Background(), envMap(env), io.Discard); err == nil || !strings.Contains(err.Error(), `bucket "missing"`) {
 		t.Errorf("missing bucket: err = %v", err)
