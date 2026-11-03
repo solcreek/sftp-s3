@@ -13,7 +13,8 @@ S3 as multipart uploads and never touch local disk.
 - Hardened for a public port 22: delayed answers to wrong passwords, a login
   timeout, and a connection cap.
 - Graceful shutdown: on SIGTERM it stops accepting and lets open transfers
-  finish.
+  finish. On SIGHUP it [reloads the users](#reloading-users) without
+  dropping sessions.
 
 ## Quick start
 
@@ -126,6 +127,35 @@ outside the blocks is an error. Checked 2026-11-02 against SFTPGo 2.7.6:
 The three keys SFTPGo generates take 2.8 KB. With a 4096-bit RSA key from
 `ssh-keygen` they take about 4.3 KB, more than an SSM Parameter Store
 standard parameter holds (4 KB): use the Advanced tier.
+
+### Reloading users
+
+On SIGHUP the server re-reads `SFTP_USERS_FILE` (either format) and replaces
+its users, using the same `S3_BUCKET` and `S3_PREFIX` as at startup:
+
+```sh
+kill -HUP "$(pidof sftp-s3)"        # or: docker kill -s HUP sftp-s3
+```
+
+- New logins see the new users at once: added users can log in, removed
+  users and replaced credentials no longer work.
+- Sessions already logged in keep running, in the bucket and prefix they got
+  at login, even when their user was removed or moved. Restart to end them.
+- The new file is validated as at startup. If it is invalid or unreadable,
+  the error is logged and the current users stay. Success logs
+  `SIGHUP: users reloaded users=<count>`.
+- `SFTP_USERS` set in the environment cannot change while the server runs,
+  so a SIGHUP then only logs that there is nothing to reload.
+
+On Kubernetes, a Secret mounted as a volume (not with `subPath`) updates the
+file some time after the Secret changes, but nothing tells the server.
+Something must send it SIGHUP, such as a reloader sidecar in a pod with
+`shareProcessNamespace: true` (the distroless image has no `kill` for
+`kubectl exec`), or restart the pods instead. The
+[Kubernetes example](examples/kubernetes/README.md) names its Secret after
+a content hash, so editing `users` there rolls the pods. The
+[AWS stack](deploy/aws) passes the users from SSM in `SFTP_USERS` when a
+task or container starts, so SIGHUP does not apply there: redeploy.
 
 ### S3 credentials
 
