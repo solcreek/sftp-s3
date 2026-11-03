@@ -49,6 +49,14 @@ tofu output -raw known_hosts >> ~/.ssh/known_hosts   # pin the host key
 sftp alice@"$(tofu output -raw sftp_address)"
 ```
 
+**Health checks.** The NLB checks the SFTP port over TCP; the module does
+not set `SFTP_METRICS_ADDR`. On a deploy, ECS deregisters a task from the
+target group before sending it SIGTERM, so a draining task gets no new
+clients without an HTTP check. To scrape metrics, add
+`SFTP_METRICS_ADDR` to the task's environment yourself and open that port
+to your Prometheus only, never in `allowed_cidrs`
+([Metrics and health](../../README.md#metrics-and-health)).
+
 **Changes:** change `image`, `users` or settings and apply.
 
 - **ECS:** gets a new task definition revision and rolls to it.

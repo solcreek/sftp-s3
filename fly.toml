@@ -35,6 +35,14 @@ kill_timeout = 120
   # logs show client addresses instead of the proxy's.
   SFTP_PROXY_PROTOCOL = "on"
   SFTP_LOG_FORMAT = "json"
+  # /healthz and Prometheus /metrics on a private port (not in [[services]],
+  # so not public); see the README's "Metrics and health".
+  # SFTP_METRICS_ADDR = ":9090"
+
+# Scrape it with Fly's managed Prometheus:
+# [metrics]
+#   port = 9090
+#   path = "/metrics"
 
 [[services]]
   internal_port = 2222
