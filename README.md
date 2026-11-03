@@ -12,6 +12,8 @@ S3 as multipart uploads and never touch local disk.
 - Each user is confined to `s3://<bucket>/<prefix><user>/`.
 - Hardened for a public port 22: delayed answers to wrong passwords, bans on
   client IPs that keep failing, a login timeout, and a connection cap.
+- An [audit log](#audit-log) of logins, uploads, downloads and file
+  changes, in JSON for log collectors with `SFTP_LOG_FORMAT=json`.
 - Graceful shutdown: on SIGTERM it stops accepting and lets open transfers
   finish. On SIGHUP it [reloads the users](#reloading-users) without
   dropping sessions.
@@ -52,6 +54,8 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 | `SFTP_BAN_DURATION` | `15m` | first ban; each repeat ban doubles it |
 | `SFTP_BAN_MAX_DURATION` | `24h` | longest ban, and how long a past ban counts as a repeat offence |
 | `SFTP_MAX_AUTH_TRIES` | `6` | login attempts per connection, 1–100 |
+| `SFTP_LOG_FORMAT` | `text` | `text` (slog's `key=value` lines) or `json` (one JSON object per line, for log collectors). See [Audit log](#audit-log) |
+| `SFTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. Audit events are at `info` |
 | `S3_ENDPOINT` | AWS | URL of an S3-compatible store; see below |
 | `S3_REGION` | `AWS_REGION` | region to sign for |
 | `S3_PATH_STYLE` | see below | `true` or `false` |
@@ -205,6 +209,55 @@ Limitations:
   one of them mistyping a password enough times bans all of them for the
   ban's length. Raise `SFTP_BAN_THRESHOLD` if many users come from one
   address.
+
+### Audit log
+
+Logins and file operations are logged as audit events, so the logs can
+answer "did my upload arrive?" and "who deleted this file?". They are
+ordinary log lines on stderr at info level; set `SFTP_LOG_FORMAT=json` to
+have a collector (CloudWatch Logs, Cloud Logging, Loki, …) parse their
+fields. The [AWS](deploy/aws), [Kubernetes](examples/kubernetes) and
+[Fly.io](fly.toml) setups do.
+
+Every audit event has an `audit` attribute naming the event, and its message
+is the same name: filter on `audit` to get them all, and only them. Each
+operation logs exactly one event. Every event also has:
+
+| attribute | |
+|---|---|
+| `session` | random id of the connection (16 hex digits); joins all events of one connection |
+| `remote` | client address, `ip:port` (the PROXY protocol's when `SFTP_PROXY_PROTOCOL=on`) |
+| `user` | login name, as the client sent it |
+
+| `audit` | when | other attributes |
+|---|---|---|
+| `login` | a client logged in | `method` (`password` or `publickey`), `fingerprint` (SHA256 of the key, for `publickey`), `bucket`, `root` (key prefix of the user's files) |
+| `login_failed` | a wrong password; a connection that tried to log in and closed without succeeding or sending a wrong password; a login refused because the client was banned meanwhile | `method` (`password`, `publickey`, or the methods tried, comma-separated), `reason` (`wrong password`, `unknown user`, `no accepted key`, `no accepted method`, `banned`) |
+| `upload` | the S3 upload completed or was aborted: on close, or when the client went away | `bucket`, `key`, `bytes`, `duration_ms`, `result`, `error` |
+| `download` | the file was closed, or the client went away | `bucket`, `key`, `bytes` (sent to the client), `duration_ms`, `result`, `error` |
+| `mkdir`, `rmdir` | | `bucket`, `key` (the `dir/` marker), `result`, `error` |
+| `remove`, `setstat` | | `bucket`, `key`, `result`, `error` |
+| `rename` | | `bucket`, `from`, `to` (keys), `result`, `error` |
+| `session_end` | a logged-in connection closed, after its open files | `duration_ms`, `bytes_in`, `bytes_out` (upload and download payload bytes of the session) |
+
+`result` is `ok` or `failed`; `error`, present only when failed, is the
+error's text (from S3, the SFTP stream or the server, never a credential).
+An upload or download refused at open (a missing file, the root directory)
+logs `failed` at once with `bytes` 0. A failed upload's `bytes` counts what
+reached S3 before it failed.
+
+A client offering several keys logs one `login_failed` for the connection,
+not one per key, just as [bans](#failed-login-bans) count it. Connections
+refused before the SSH handshake because their client is banned, and
+connections that never try to log in (health checks), are not audit
+events. Listings and stats are not logged. Passwords, password hashes,
+private keys and S3 credentials are never logged.
+
+An upload in JSON:
+
+```json
+{"time":"2026-11-02T10:00:03.1Z","level":"INFO","msg":"upload","session":"9f86d081884c7d65","remote":"203.0.113.7:51234","user":"alice","audit":"upload","bucket":"uploads","key":"sftp/alice/report.csv","bytes":1048576,"duration_ms":412,"result":"ok"}
+```
 
 ### S3 credentials
 

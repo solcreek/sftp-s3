@@ -6,6 +6,22 @@ break configuration.
 
 ## Unreleased
 
+- Audit log: logins, failed logins, uploads (logged when the S3 upload
+  completes or is aborted), downloads, mkdir, rmdir, remove, rename,
+  setstat and session ends are each logged as one info-level event with
+  `audit=<event>`, a per-connection `session` id, `remote` and `user`, and
+  a `result` (`ok` or `failed`, with the error). See the README for every
+  event's attributes. Secrets are never logged.
+- `SFTP_LOG_FORMAT=json` logs one JSON object per line (default `text`);
+  `SFTP_LOG_LEVEL` sets the level (`debug`, `info`, `warn`, `error`;
+  default `info`). Invalid values stop the server at startup. The AWS,
+  Kubernetes and Fly.io setups log JSON.
+  - **Log changes:** the `login` line has `method` (`password` or
+    `publickey`) and `fingerprint` instead of `auth`; `upload done` is
+    replaced by the `upload` event (`duration_ms` instead of `secs` and
+    `MBps`); `upload start` is logged at debug level; `login refused:
+    client was banned during the login` is now a `login_failed` event with
+    `reason=banned`. `remote` is always a string, also in JSON.
 - Clients that fail to log in too often are banned before the SSH
   handshake. A client is an IPv4 address or an IPv6 /64; by default 10
   failures in 10 minutes ban it for 15 minutes, doubling on repeat bans up
