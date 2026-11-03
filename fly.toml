@@ -6,12 +6,18 @@
 #   fly ips allocate-v4                       # a dedicated IPv4: port 22 needs one
 #   fly deploy                                # two machines by default; --ha=false for one
 #
-# Verified 2026-11-01 in nrt with one machine, building from the Dockerfile
-# instead of pulling the image:
-# - key login and a 32 MiB upload with matching md5 in S3;
-# - an upload that kept running across `fly deploy` (SIGTERM, then the
-#   session finished and the process exited 0);
+# Verified 2026-11-02 in nrt with two machines pulling ghcr.io/solcreek/sftp-s3:0.1:
+# - logins spread over both machines, with one pinned host key;
+# - `fly deploy` while each machine held a 96 MiB upload: machines restarted
+#   one at a time, each waiting for its upload; both uploads finished with
+#   matching md5 in S3;
+# - meanwhile 59 of 61 new connections (one a second) succeeded. The proxy
+#   sent the other 2 to the machine that was draining ("instance refused
+#   connection"), so clients should retry;
+# - `fly machine stop` on one machine: the next connection failed, the 9
+#   after it went to the other machine;
 # - with proxy_proto, logs show the client's address.
+# Verified 2026-11-01: one machine, an upload kept running across a deploy.
 # Right after `fly ips allocate-v4` and the first deploy, connections were
 # closed before reaching the machine for about half a minute, twice.
 app = "sftp-s3"
