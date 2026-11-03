@@ -6,6 +6,14 @@ break configuration.
 
 ## Unreleased
 
+- A JSON users format (`SFTP_USERS` / `SFTP_USERS_FILE` starting with `{`)
+  that gives each user their own bucket and prefix, including a bucket
+  root. `S3_BUCKET` is optional when every user names a bucket, and
+  `-check` reaches every bucket.
+- The user's root directory now refuses mkdir, remove, rename and writes
+  with "permission denied". Before, `mkdir /` and `rmdir /` created or
+  removed a marker object for the user's prefix.
+
 - `-version` reports the module version for binaries built with
   `go install github.com/solcreek/sftp-s3@<version>` (it printed `dev`).
 

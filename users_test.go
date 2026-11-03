@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
 	"slices"
@@ -94,5 +95,73 @@ func TestParseUsersErrors(t *testing.T) {
 		if err != nil && strings.Contains(in, "one") && strings.Contains(err.Error(), "one") {
 			t.Errorf("error %q leaks the password", err)
 		}
+	}
+}
+
+func TestParseUsersJSON(t *testing.T) {
+	key, pub := authorizedKey(t, "bob@laptop")
+	in := `{"users": [
+	  {"username": "alice", "password_hash": "` + testHash + `", "bucket": "alpha", "prefix": ""},
+	  {"username": "bob", "public_keys": ["` + key + `"]},
+	  {"username": "carol", "password_hash": "` + testHash + `", "prefix": "in/coming/"},
+	  {"username": "john.doe@example.com", "password_hash": "` + testHash + `", "bucket": "beta"}
+	]}`
+	users, err := loadUsers("\n  "+in, "default", "tenants/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][2]string{ // bucket, root
+		"alice":                {"alpha", ""},
+		"bob":                  {"default", "tenants/bob/"},
+		"carol":                {"default", "in/coming/"},
+		"john.doe@example.com": {"beta", "tenants/john.doe@example.com/"},
+	}
+	if len(users) != len(want) {
+		t.Fatalf("got %d users, want %d", len(users), len(want))
+	}
+	for name, w := range want {
+		u := users[name]
+		if u.Bucket != w[0] || u.Root != w[1] {
+			t.Errorf("%s: s3://%s/%s, want s3://%s/%s", name, u.Bucket, u.Root, w[0], w[1])
+		}
+	}
+	if users["alice"].PasswordHash != testHash || users["alice"].Password != "" {
+		t.Errorf("alice's hash not carried over")
+	}
+	if b := users["bob"]; len(b.Keys) != 1 || !bytes.Equal(b.Keys[0].Marshal(), pub.Marshal()) || b.PasswordHash != "" {
+		t.Errorf("bob: %+v", b)
+	}
+}
+
+func TestParseUsersJSONErrors(t *testing.T) {
+	user := func(fields string) string { return `{"users": [{` + fields + `}]}` }
+	h := `"password_hash": "` + testHash + `"`
+	for in, want := range map[string]string{
+		`{"users": []}`:                 `"users" is empty`,
+		`{}`:                            `"users" is empty`,
+		`{"users": [}`:                  "users file:",
+		`{"users": []} {"users": []}`:   "unexpected data",
+		`{"users": [], "groups": []}`:   `unknown field "groups"`,
+		user(h + `, "home": "/x"`):      `unknown field "home"`,
+		user(h):                         "has no username",
+		user(`"username": "..", ` + h):  "may not be",
+		user(`"username": "a/b", ` + h): "may not be",
+		user(`"username": "a b", ` + h): "may not be",
+		user(`"username": "a", "password": "hunter2"`):                            `use "password_hash"`,
+		user(`"username": "a", "password_hash": "hunter2"`):                       "not a bcrypt hash",
+		user(`"username": "a", "public_keys": ["ssh-ed25519 AAAAnotbase64"]`):     "public key 1 is unreadable",
+		`{"users": [{"username": "a", ` + h + `}, {"username": "a", ` + h + `}]}`: "listed twice",
+	} {
+		_, err := loadUsers(in, "default", "")
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("loadUsers(%s) = %v, want error containing %q", in, err, want)
+		}
+		if err != nil && strings.Contains(err.Error(), "hunter2") {
+			t.Errorf("error %q leaks the password", err)
+		}
+	}
+	// Without S3_BUCKET, every user must name a bucket.
+	if _, err := loadUsers(user(`"username": "a", `+h), "", ""); err == nil || !strings.Contains(err.Error(), "no bucket") {
+		t.Errorf("no bucket: err = %v", err)
 	}
 }

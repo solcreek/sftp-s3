@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -169,11 +170,30 @@ func runCheck(ctx context.Context, getenv func(string) string, out io.Writer) er
 	}
 	fmt.Fprintf(out, "users: %d (%d keys, %d hashed passwords, %d plaintext passwords)\n", len(cfg.Users), keys, hashed, plain)
 	fmt.Fprintf(out, "host key: %s\n", ssh.FingerprintSHA256(cfg.HostKey.PublicKey()))
-	if _, err := cfg.Client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &cfg.Bucket}); err != nil {
-		return fmt.Errorf("bucket %q: %w", cfg.Bucket, err)
+	for _, b := range buckets(cfg) {
+		if _, err := cfg.Client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: &b}); err != nil {
+			return fmt.Errorf("bucket %q: %w", b, err)
+		}
+		fmt.Fprintf(out, "bucket: %s reachable\n", b)
 	}
-	fmt.Fprintf(out, "bucket: %s reachable\nok\n", cfg.Bucket)
+	fmt.Fprintln(out, "ok")
 	return nil
+}
+
+// buckets lists, sorted, the buckets the users live in.
+func buckets(cfg gateway.Config) []string {
+	var bs []string
+	for _, u := range cfg.Users {
+		b := u.Bucket
+		if b == "" {
+			b = cfg.Bucket
+		}
+		if !slices.Contains(bs, b) {
+			bs = append(bs, b)
+		}
+	}
+	slices.Sort(bs)
+	return bs
 }
 
 func run(ctx context.Context, getenv func(string) string) error {
@@ -190,7 +210,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 	if err != nil {
 		return err
 	}
-	slog.Info("listening", "version", version, "addr", ln.Addr().String(), "bucket", cfg.Bucket,
+	slog.Info("listening", "version", version, "addr", ln.Addr().String(), "buckets", strings.Join(buckets(cfg), ","),
 		"fingerprint", ssh.FingerprintSHA256(cfg.HostKey.PublicKey()))
 	go func() {
 		<-ctx.Done()
@@ -225,7 +245,8 @@ func orDefault(v, def string) string {
 }
 
 // loadConfig builds the gateway config from environment variables:
-// S3_BUCKET, SFTP_USERS, and optionally S3_PREFIX, SFTP_HOST_KEY,
+// SFTP_USERS (line or JSON format, see loadUsers), S3_BUCKET (unless every
+// JSON user names a bucket), and optionally S3_PREFIX, SFTP_HOST_KEY,
 // (SFTP_USERS and SFTP_HOST_KEY may instead be read from a file named by
 // SFTP_USERS_FILE / SFTP_HOST_KEY_FILE, the Docker and Kubernetes secrets
 // convention),
@@ -235,17 +256,19 @@ func orDefault(v, def string) string {
 func loadConfig(ctx context.Context, getenv func(string) string) (gateway.Config, error) {
 	var cfg gateway.Config
 	cfg.Bucket = getenv("S3_BUCKET")
-	if cfg.Bucket == "" {
-		return cfg, errors.New("S3_BUCKET is required")
-	}
 	cfg.Prefix = getenv("S3_PREFIX")
 	var err error
 	users, err := secretEnv(getenv, "SFTP_USERS")
 	if err != nil {
 		return cfg, err
 	}
-	if cfg.Users, err = parseUsers(users); err != nil {
+	if cfg.Users, err = loadUsers(users, cfg.Bucket, cfg.Prefix); err != nil {
 		return cfg, err
+	}
+	for _, u := range cfg.Users {
+		if u.Bucket == "" && cfg.Bucket == "" {
+			return cfg, errors.New("S3_BUCKET is required")
+		}
 	}
 	for _, name := range plaintextUsers(cfg.Users) {
 		slog.Warn("plaintext password; store a bcrypt hash instead (sftp-s3 -hash-password)", "user", name)

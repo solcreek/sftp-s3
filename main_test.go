@@ -361,3 +361,47 @@ func TestResolveVersion(t *testing.T) {
 		}
 	}
 }
+
+// A JSON users file can spread users over buckets with no S3_BUCKET at all;
+// -check then reaches every one of them.
+func TestRunCheckJSONUsers(t *testing.T) {
+	isolateAWS(t)
+	backend := s3mem.New()
+	for _, b := range []string{"alpha", "beta"} {
+		if err := backend.CreateBucket(b); err != nil {
+			t.Fatal(err)
+		}
+	}
+	store := httptest.NewServer(gofakes3.New(backend).Server())
+	t.Cleanup(store.Close)
+	keyPEM, _ := testKeyPEM(t)
+	users := filepath.Join(t.TempDir(), "users.json")
+	write := func(s string) {
+		if err := os.WriteFile(users, []byte(s), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`{"users": [
+	  {"username": "alice", "password_hash": "` + testHash + `", "bucket": "alpha", "prefix": ""},
+	  {"username": "bob", "password_hash": "` + testHash + `", "bucket": "beta", "prefix": "in/"}]}`)
+	env := map[string]string{"S3_ENDPOINT": store.URL, "SFTP_USERS_FILE": users, "SFTP_HOST_KEY": keyPEM}
+
+	var out strings.Builder
+	if err := runCheck(context.Background(), envMap(env), &out); err != nil {
+		t.Fatalf("check failed: %v\n%s", err, out.String())
+	}
+	for _, want := range []string{"users: 2 (0 keys, 2 hashed passwords, 0 plaintext passwords)", "bucket: alpha reachable\nbucket: beta reachable\nok"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output lacks %q:\n%s", want, out.String())
+		}
+	}
+
+	write(`{"users": [{"username": "carol", "password_hash": "` + testHash + `", "bucket": "gamma"}]}`)
+	if err := runCheck(context.Background(), envMap(env), io.Discard); err == nil || !strings.Contains(err.Error(), `bucket "gamma"`) {
+		t.Errorf("missing bucket: err = %v", err)
+	}
+	write(`{"users": [{"username": "carol", "password_hash": "` + testHash + `"}]}`)
+	if err := runCheck(context.Background(), envMap(env), io.Discard); err == nil || !strings.Contains(err.Error(), "S3_BUCKET") {
+		t.Errorf("no bucket anywhere: err = %v", err)
+	}
+}

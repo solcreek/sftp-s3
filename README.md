@@ -37,7 +37,7 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 
 | variable | default | |
 |---|---|---|
-| `S3_BUCKET` | required | bucket to serve |
+| `S3_BUCKET` | required | bucket to serve; optional when every user in a [JSON users file](#users-in-their-own-buckets) names a bucket |
 | `SFTP_USERS` | required | users and their credentials, see [Users](#users) |
 | `SFTP_HOST_KEY` | random per start | PEM private key (OpenSSH format, e.g. from `ssh-keygen`); set it in production |
 | `SFTP_USERS_FILE`, `SFTP_HOST_KEY_FILE` | | read the value from a file instead (Docker / Kubernetes secrets); set one form, not both |
@@ -70,6 +70,34 @@ Make a hash with `sftp-s3 -hash-password` (it prompts, or reads a line from
 stdin). `SFTP_USERS='alice:a-long-password'` is fine for a first try; the server logs
 a warning for every plaintext password. User names may not contain `/`, `.`
 or spaces: they become S3 key prefixes.
+
+Each user lives at `s3://$S3_BUCKET/$S3_PREFIX<user>/` and cannot see
+anything outside it.
+
+### Users in their own buckets
+
+When `SFTP_USERS` (usually through `SFTP_USERS_FILE`) starts with `{`, it is
+a JSON file that can place each user anywhere:
+
+```json
+{"users": [
+  {"username": "alice", "password_hash": "$2a$10$...", "bucket": "alice-uploads", "prefix": ""},
+  {"username": "bob", "public_keys": ["ssh-ed25519 AAAA... bob@laptop"], "prefix": "partners/bob/"},
+  {"username": "carol", "password_hash": "$2a$10$..."}
+]}
+```
+
+- `bucket` defaults to `S3_BUCKET`.
+- An absent `prefix` keeps the usual `<S3_PREFIX><user>/`. `""` is the
+  bucket root. Any other value ends in `/`.
+- `public_keys` lists authorized_keys lines; `password_hash` is a bcrypt
+  hash. Plaintext passwords are not accepted in this format.
+- Unknown fields are errors, so a typo cannot silently change where a user
+  lives.
+
+All buckets are reached with the same credentials and region. Users stay
+confined to their bucket and prefix; their root directory itself cannot be
+removed or renamed.
 
 ### S3 credentials
 
