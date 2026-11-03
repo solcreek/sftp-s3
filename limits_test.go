@@ -53,6 +53,13 @@ func TestLoadLoginLimits(t *testing.T) {
 	if err := loadLoginLimits(envMap(map[string]string{"SFTP_MAX_AUTH_TRIES": "many"}), &cfg); err == nil {
 		t.Error("SFTP_MAX_AUTH_TRIES=many accepted")
 	}
+	// Durations are bounded, so doubling a repeat ban cannot overflow.
+	for v, ok := range map[string]bool{"720h": true, "721h": false, "2562047h": false} {
+		err := loadLoginLimits(envMap(map[string]string{"SFTP_BAN_MAX_DURATION": v}), &cfg)
+		if (err == nil) != ok {
+			t.Errorf("SFTP_BAN_MAX_DURATION=%s: err = %v, want accepted=%v", v, err, ok)
+		}
+	}
 }
 
 func TestLoadConfigAppliesLoginLimits(t *testing.T) {
