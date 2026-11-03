@@ -6,6 +6,16 @@ break configuration.
 
 ## Unreleased
 
+- Several host keys: `SFTP_HOST_KEY` / `SFTP_HOST_KEY_FILE` may hold one
+  PEM private key per type (ed25519, ecdsa, rsa) concatenated, so clients
+  that pinned any of an old server's keys keep connecting. `-check` and the
+  startup log show every fingerprint.
+  - **Breaking:** text outside the PEM blocks (a comment line, an appended
+    `.pub` line) is now an error at startup; before, it was ignored. Two
+    keys of the same type are refused.
+  - **Log change:** the `listening` line no longer has a `fingerprint`
+    attribute; each key is logged on its own `host key` line.
+  - `gateway.Config.HostKey` is now `HostKeys`.
 - `sftp-s3 import-sftpgo <dump.json>` converts the users of an SFTPGo JSON
   data dump to a JSON users file: bcrypt hashes, public keys, bucket and key
   prefix, with a warning for every setting it cannot carry over. Login
