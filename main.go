@@ -243,7 +243,7 @@ func run(ctx context.Context, getenv func(string) string) error {
 			return err
 		}
 		defer stopHTTP()
-		slog.Info("metrics listening", "addr", bound)
+		slog.Info("http listening", "addr", bound, "paths", "/healthz /metrics")
 	}
 	for _, k := range cfg.HostKeys {
 		slog.Info("host key", "type", k.PublicKey().Type(), "fingerprint", ssh.FingerprintSHA256(k.PublicKey()))
