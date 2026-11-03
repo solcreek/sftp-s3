@@ -30,6 +30,14 @@ filesystem.
   `kill_timeout`, whose defaults of SIGINT and 5 s would cut uploads).
 - **Memory for `SFTP_MAX_CONNECTIONS`**: about 120 MiB per concurrent large
   upload.
+- **Optionally, health and metrics** on a private port:
+  `SFTP_METRICS_ADDR=:9090` serves `/healthz` (503 from SIGTERM on, while
+  sessions drain) and Prometheus `/metrics`. It has no authentication, so
+  never route it through the public SFTP load balancer or open it in a
+  public security group. Point HTTP health checks that probe the instance
+  directly at `/healthz`; a plain TCP check on the SFTP port keeps working,
+  but cannot tell a draining instance from a serving one
+  ([Metrics and health](../README.md#metrics-and-health)).
 - **An `AbortIncompleteMultipartUpload` lifecycle rule** on the bucket.
 - **Keep the gateway in the bucket's region.** Uploads leave the provider's
   network otherwise, and egress is billed per GB. On AWS, add an S3 gateway

@@ -14,6 +14,8 @@ S3 as multipart uploads and never touch local disk.
   client IPs that keep failing, a login timeout, and a connection cap.
 - An [audit log](#audit-log) of logins, uploads, downloads and file
   changes, in JSON for log collectors with `SFTP_LOG_FORMAT=json`.
+- Optional [health check and Prometheus metrics](#metrics-and-health) on a
+  separate HTTP port.
 - Graceful shutdown: on SIGTERM it stops accepting and lets open transfers
   finish. On SIGHUP it [reloads the users](#reloading-users) without
   dropping sessions.
@@ -56,6 +58,7 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 | `SFTP_MAX_AUTH_TRIES` | `6` | login attempts per connection, 1–100 |
 | `SFTP_LOG_FORMAT` | `text` | `text` (slog's `key=value` lines) or `json` (one JSON object per line, for log collectors). See [Audit log](#audit-log) |
 | `SFTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. Audit events are at `info` |
+| `SFTP_METRICS_ADDR` | off | `host:port` or `:port` of an HTTP listener serving `/healthz` and `/metrics`, e.g. `:9090` or `127.0.0.1:9090`. Unset means no HTTP listener at all. It has no authentication: never expose it publicly. See [Metrics and health](#metrics-and-health) |
 | `S3_ENDPOINT` | AWS | URL of an S3-compatible store; see below |
 | `S3_REGION` | `AWS_REGION` | region to sign for |
 | `S3_PATH_STYLE` | see below | `true` or `false` |
@@ -259,6 +262,62 @@ An upload in JSON:
 
 ```json
 {"time":"2026-11-02T10:00:03.1Z","level":"INFO","msg":"upload","session":"9f86d081884c7d65","remote":"203.0.113.7:51234","user":"alice","audit":"upload","bucket":"uploads","key":"sftp/alice/report.csv","bytes":1048576,"duration_ms":412,"result":"ok"}
+```
+
+### Metrics and health
+
+Set `SFTP_METRICS_ADDR` (e.g. `:9090`) to start an HTTP listener next to
+the SFTP port. It serves two paths, `GET` (and `HEAD`) only; anything else is
+404 (405 for another method).
+
+**It has no authentication.** Keep it on a private network: bind it to
+`127.0.0.1` or a pod/VPC address, and never publish it through the SFTP load
+balancer. The metrics hold no user names, keys, addresses or other
+client-chosen text, but they do show traffic and login failures. It cannot
+share the SFTP port (`PORT`); the server refuses to start if it is the same
+port, or if the address is not `host:port` with a numeric port.
+
+- **`/healthz`** answers `200 ok` while the server accepts SFTP connections,
+  and `503` from the moment shutdown begins (SIGTERM), while open sessions
+  drain. A load balancer or a Kubernetes readiness probe on it stops sending
+  new clients to a pod that is shutting down, while its uploads finish. The
+  HTTP listener stays up during the drain and closes when the process exits.
+  It does not call S3: a probe every few seconds would cost requests and
+  add the store's latency, and an S3 outage would take every replica out of
+  the load balancer at once. Use `sftp-s3 -check` (or the
+  `sftp_s3_operations_total{result="failed"}` rate) to watch the store.
+- **`/metrics`** is the Prometheus text format (0.0.4). Counters count from
+  process start; every series exists from the start, at zero. Login and
+  operation counters are fed by the same code that logs the
+  [audit events](#audit-log), so they always agree with the audit log.
+
+| metric | type | labels | |
+|---|---|---|---|
+| `sftp_s3_build_info` | gauge | `version` | always 1 |
+| `sftp_s3_connections_total` | counter | | TCP connections accepted, including those then rejected and load balancer health checks |
+| `sftp_s3_connections_rejected_total` | counter | `reason`: `limit`, `banned` | closed before the SSH handshake: `SFTP_MAX_CONNECTIONS` reached, or the client is banned |
+| `sftp_s3_connections_open` | gauge | | connections open now, logged in or not |
+| `sftp_s3_connections_max` | gauge | | `SFTP_MAX_CONNECTIONS` |
+| `sftp_s3_sessions_active` | gauge | | logged-in connections now (`login` events minus `session_end` events) |
+| `sftp_s3_logins_total` | counter | `method`: `password`, `publickey`, `other` | `login` events |
+| `sftp_s3_login_failures_total` | counter | `reason`: `unknown user`, `wrong password`, `banned`, `no accepted method`, `no accepted key`, `other` | `login_failed` events |
+| `sftp_s3_operations_total` | counter | `op`: `upload`, `download`, `mkdir`, `remove`, `rmdir`, `rename`, `setstat`; `result`: `ok`, `failed` | file operation events |
+| `sftp_s3_bytes_received_total` | counter | | upload payload bytes (the `bytes` of `upload` events), counted when each upload ends |
+| `sftp_s3_bytes_sent_total` | counter | | download payload bytes (the `bytes` of `download` events), counted when each download ends |
+| `sftp_s3_bans_total` | counter | | clients banned (see [Failed-login bans](#failed-login-bans)) |
+| `sftp_s3_banned_clients` | gauge | | clients (IPv4 addresses or IPv6 /64s) banned now |
+
+`other` never appears today; it keeps the label sets fixed should a new
+value turn up. Bytes are counted when a transfer ends, so a long upload
+shows as one step rather than a steady rate. Counters are per process, like
+bans: sum them across replicas in Prometheus.
+
+Useful expressions:
+
+```promql
+sum(rate(sftp_s3_operations_total{op="upload",result="failed"}[5m]))  # upload errors
+sum(rate(sftp_s3_login_failures_total[5m])) by (reason)                # auth failures
+sftp_s3_connections_open / sftp_s3_connections_max                     # how full the server is
 ```
 
 ### S3 credentials

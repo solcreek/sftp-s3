@@ -6,6 +6,21 @@ break configuration.
 
 ## Unreleased
 
+- Health check and Prometheus metrics, off by default:
+  `SFTP_METRICS_ADDR` (e.g. `:9090`) starts an HTTP listener, separate from
+  the SFTP port and without authentication (keep it private), serving
+  `GET /healthz` and `GET /metrics`. `/healthz` is 200 while the server
+  accepts connections and 503 from SIGTERM on, while sessions drain; it
+  does not call S3. `/metrics` has connections (accepted, rejected by
+  limit or ban, open, max), active sessions, logins by method, login
+  failures by reason, file operations by op and result, bytes received and
+  sent, bans and banned clients, and the version. Login and operation
+  counts come from the audit events, so they match the audit log. Labels
+  are fixed sets: no user names, keys or addresses. No new dependency. A
+  bad address, or the SFTP port, stops the server at startup.
+- `examples/kubernetes` sets `SFTP_METRICS_ADDR=:9090`, uses `/healthz` as
+  the readiness probe and adds `prometheus.io` scrape annotations.
+
 - The AWS SDK no longer prints a `DEBUG Response has no supported checksum`
   line to stderr for every ranged download, which broke JSON log parsing.
 - Audit log: logins, failed logins, uploads (logged when the S3 upload
