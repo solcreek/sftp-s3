@@ -101,7 +101,7 @@ func TestLoadConfig(t *testing.T) {
 	if cfg.Bucket != "uploads" || cfg.Prefix != "sftp/" || cfg.Users["alice"].Password != "pw" {
 		t.Fatalf("cfg = %+v", cfg)
 	}
-	if string(cfg.HostKey.PublicKey().Marshal()) != string(pub.Marshal()) {
+	if string(cfg.HostKeys[0].PublicKey().Marshal()) != string(pub.Marshal()) {
 		t.Fatal("host key not taken from SFTP_HOST_KEY")
 	}
 	opts := cfg.Client.Options()
@@ -163,7 +163,7 @@ func TestLoadConfigFromFiles(t *testing.T) {
 	if len(cfg.Users["alice"].Keys) != 1 || cfg.Users["bob"].Password != "pw" {
 		t.Fatalf("users = %+v", cfg.Users)
 	}
-	if string(cfg.HostKey.PublicKey().Marshal()) != string(pub.Marshal()) {
+	if string(cfg.HostKeys[0].PublicKey().Marshal()) != string(pub.Marshal()) {
 		t.Fatal("host key not read from SFTP_HOST_KEY_FILE")
 	}
 

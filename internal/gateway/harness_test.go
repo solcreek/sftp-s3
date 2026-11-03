@@ -69,7 +69,7 @@ func newEnv(t *testing.T, opts ...envOpt) *env {
 		Bucket:   bucket,
 		Prefix:   base,
 		Users:    map[string]User{"alice": {Password: "alice-pw"}, "bob": {Password: "bob-pw"}},
-		HostKey:  signer,
+		HostKeys: []ssh.Signer{signer},
 		PartSize: 5 << 20, // S3's minimum, so multi-part paths run on small files
 
 		AuthFailDelay: time.Millisecond, // keep auth tests fast; TestFailedLoginIsDelayed sets its own
