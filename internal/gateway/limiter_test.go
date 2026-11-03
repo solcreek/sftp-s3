@@ -166,7 +166,6 @@ func TestLimiterRepeatBansGrowUpToTheCap(t *testing.T) {
 	// Once maxBan has passed since the last ban ended, the record is
 	// forgotten and the next ban starts short again.
 	clk.advance(5 * time.Minute)
-	l.fail(tcp("198.51.100.1:1")) // a new client triggers the sweep
 	l.fail(a)
 	clk.advance(time.Minute)
 	if !l.allow(a) {
