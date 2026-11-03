@@ -3,9 +3,7 @@ package gateway
 import (
 	"fmt"
 	"io"
-	"log/slog"
 	"sync"
-	"time"
 )
 
 // streamWriter turns WriteAt calls into a sequential stream consumed by an
@@ -25,7 +23,10 @@ type streamWriter struct {
 	failed   error
 	done     chan error
 	closed   bool
-	start    time.Time
+
+	// finish, if set, is called once the upload has ended, with the bytes
+	// streamed to it and Close's error.
+	finish func(n int64, err error)
 }
 
 func newStreamWriter(max int64, upload func(io.Reader) error) *streamWriter {
@@ -42,9 +43,6 @@ func newStreamWriter(max int64, upload func(io.Reader) error) *streamWriter {
 func (w *streamWriter) WriteAt(p []byte, off int64) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.start.IsZero() {
-		w.start = time.Now()
-	}
 	if w.failed != nil {
 		return 0, w.failed
 	}
@@ -105,14 +103,15 @@ func (w *streamWriter) Close() error {
 	} else {
 		w.pw.Close()
 	}
+	n := w.off // final: the stream is closed
 	w.mu.Unlock()
 	upErr := <-w.done
 	if err == nil {
 		err = upErr
 	}
-	secs := time.Since(w.start).Seconds()
-	slog.Info("upload done", "bytes", w.off, "secs", fmt.Sprintf("%.2f", secs),
-		"MBps", fmt.Sprintf("%.1f", float64(w.off)/1e6/max(secs, 1e-9)), "err", err)
+	if w.finish != nil {
+		w.finish(n, err)
+	}
 	return err
 }
 

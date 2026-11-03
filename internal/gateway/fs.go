@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -50,11 +50,16 @@ func isRoot(p string) bool { return path.Clean("/"+p) == "/" }
 
 // ---------- uploads ----------
 
+// Filewrite starts an upload. Its upload event is logged once S3 has
+// completed or aborted the multipart upload: when the handle is closed, or
+// the client goes away. An upload refused at once is logged then.
 func (u *userFS) Filewrite(r *sftp.Request) (io.WriterAt, error) {
+	key := u.key(r.Filepath)
+	start := time.Now()
 	if isRoot(r.Filepath) {
+		u.sess.transfer(evUpload, u.bucket, key, 0, start, sftp.ErrSSHFxPermissionDenied)
 		return nil, sftp.ErrSSHFxPermissionDenied
 	}
-	key := u.key(r.Filepath)
 	up := manager.NewUploader(u.client, func(m *manager.Uploader) {
 		m.PartSize = u.partSize
 		m.Concurrency = 4
@@ -63,29 +68,73 @@ func (u *userFS) Filewrite(r *sftp.Request) (io.WriterAt, error) {
 		// the resulting per-part CRC32 checksums.
 		m.RequestChecksumCalculation = u.client.Options().RequestChecksumCalculation
 	})
-	slog.Info("upload start", "bucket", u.bucket, "key", key)
-	return newStreamWriter(u.maxReorder, func(body io.Reader) error {
+	u.sess.log.Debug("upload start", "bucket", u.bucket, "key", key)
+	w := newStreamWriter(u.maxReorder, func(body io.Reader) error {
 		_, err := up.Upload(context.Background(), &s3.PutObjectInput{Bucket: &u.bucket, Key: &key, Body: body})
 		return err
-	}), nil
+	})
+	w.finish = func(n int64, err error) {
+		u.sess.bytesIn.Add(n)
+		u.sess.transfer(evUpload, u.bucket, key, n, start, err)
+	}
+	return w, nil
 }
 
 // ---------- downloads ----------
 
+// Fileread opens a download. Its download event is logged when the handle
+// is closed, or at once when the file cannot be opened.
 func (u *userFS) Fileread(r *sftp.Request) (io.ReaderAt, error) {
+	key := u.key(r.Filepath)
+	start := time.Now()
 	if isRoot(r.Filepath) {
+		u.sess.transfer(evDownload, u.bucket, key, 0, start, sftp.ErrSSHFxPermissionDenied)
 		return nil, sftp.ErrSSHFxPermissionDenied
 	}
-	key := u.key(r.Filepath)
 	if _, err := u.client.HeadObject(r.Context(), &s3.HeadObjectInput{Bucket: &u.bucket, Key: &key}); err != nil {
-		return nil, mapErr(err)
+		err = mapErr(err)
+		u.sess.transfer(evDownload, u.bucket, key, 0, start, err)
+		return nil, err
 	}
-	return &s3Reader{client: u.client, bucket: u.bucket, key: key}, nil
+	return &s3Reader{client: u.client, bucket: u.bucket, key: key, finish: func(n int64, err error) {
+		u.sess.bytesOut.Add(n)
+		u.sess.transfer(evDownload, u.bucket, key, n, start, err)
+	}}, nil
 }
 
 // ---------- commands ----------
 
+// Filecmd runs a command and logs it as one audit event.
 func (u *userFS) Filecmd(r *sftp.Request) error {
+	err := u.filecmd(r)
+	u.logCmd(r, err)
+	return err
+}
+
+// logCmd logs the audit event of a command that ended with err. Commands
+// the gateway does not support (links) change nothing and are not logged.
+func (u *userFS) logCmd(r *sftp.Request, err error) {
+	var event string
+	var attrs []any
+	switch r.Method {
+	case "Mkdir":
+		event, attrs = evMkdir, []any{"key", u.dirKey(r.Filepath)}
+	case "Rmdir":
+		event, attrs = evRmdir, []any{"key", u.dirKey(r.Filepath)}
+	case "Remove":
+		event, attrs = evRemove, []any{"key", u.key(r.Filepath)}
+	case "Setstat":
+		event, attrs = evSetstat, []any{"key", u.key(r.Filepath)}
+	case "Rename", "PosixRename":
+		event, attrs = evRename, []any{"from", u.key(r.Filepath), "to", u.key(r.Target)}
+	default:
+		return
+	}
+	attrs = append([]any{"bucket", u.bucket}, attrs...)
+	audit(u.sess.log, event, append(attrs, result(err)...)...)
+}
+
+func (u *userFS) filecmd(r *sftp.Request) error {
 	ctx := r.Context()
 	switch r.Method {
 	case "Setstat":

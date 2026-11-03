@@ -45,5 +45,5 @@ BOB=("${SFTP[@]}"); BOB[2]=other
 "${BOB[@]}" bob@127.0.0.1 <<<"get ../alice/inbox/big.bin $TMP/stolen" >/dev/null 2>&1 && echo "FAIL bob read alice via ../" || echo "PASS bob cannot escape via ../"
 sshpass -p wrong sftp -P "$PORT" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=no -o PubkeyAuthentication=no -o LogLevel=ERROR -b - alice@127.0.0.1 <<<"ls" >/dev/null 2>&1 && echo "FAIL bad password accepted" || echo "PASS bad password rejected"
 
-grep -i "upload done" "$TMP/server.log" | tail -1 || true
+grep "audit=upload " "$TMP/server.log" | tail -1 || true
 echo "binary_bytes=$(stat -f %z "$BIN") idle_rss_kb=$idle_rss peak_rss_kb=$(cat "$TMP/peak") session_secs=$(python3 -c "print(round($t1-$t0,1))")"
