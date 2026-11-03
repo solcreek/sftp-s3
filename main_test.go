@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -337,5 +338,26 @@ func TestRunCheck(t *testing.T) {
 func TestOrDefault(t *testing.T) {
 	if orDefault("", "2222") != "2222" || orDefault("22", "2222") != "22" {
 		t.Fatal("orDefault")
+	}
+}
+
+func TestResolveVersion(t *testing.T) {
+	mod := func(v string) *debug.BuildInfo { return &debug.BuildInfo{Main: debug.Module{Version: v}} }
+	for _, tc := range []struct {
+		release string
+		info    *debug.BuildInfo
+		want    string
+	}{
+		{"0.1.0", mod("v0.1.0"), "0.1.0"},  // GoReleaser
+		{"0.2.0", mod("(devel)"), "0.2.0"}, // ldflags win
+		{"dev", mod("v0.1.0"), "0.1.0"},    // go install …@v0.1.0
+		{"dev", mod("v0.1.1-0.20261102010203-abcdef123456+dirty"), "0.1.1-0.20261102010203-abcdef123456+dirty"},
+		{"dev", mod("(devel)"), "dev"},
+		{"dev", mod(""), "dev"},
+		{"dev", nil, "dev"},
+	} {
+		if got := resolveVersion(tc.release, tc.info); got != tc.want {
+			t.Errorf("resolveVersion(%q, %v) = %q, want %q", tc.release, tc.info, got, tc.want)
+		}
 	}
 }

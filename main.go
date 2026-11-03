@@ -18,6 +18,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -32,8 +33,28 @@ import (
 	"github.com/solcreek/sftp-s3/internal/s3client"
 )
 
-// version is set at release time: -ldflags "-X main.version=v1.2.3".
+// version is set at release time: -ldflags "-X main.version=1.2.3".
+// Other builds fall back to the module version Go records in the binary,
+// so `go install github.com/solcreek/sftp-s3@v1.2.3` reports 1.2.3.
 var version = "dev"
+
+func init() {
+	info, _ := debug.ReadBuildInfo()
+	version = resolveVersion(version, info)
+}
+
+// resolveVersion prefers the release version, then the module version.
+// A build from a source checkout reports "(devel)" or a pseudo-version.
+func resolveVersion(release string, info *debug.BuildInfo) string {
+	if release != "dev" || info == nil {
+		return release
+	}
+	v := info.Main.Version
+	if v == "" || v == "(devel)" {
+		return release
+	}
+	return strings.TrimPrefix(v, "v")
+}
 
 func main() {
 	check, code, done := parseFlags(os.Args[1:], os.Stdin, os.Stdout, os.Stderr)

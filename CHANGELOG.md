@@ -4,6 +4,11 @@ All notable changes are listed here. The project follows
 [Semantic Versioning](https://semver.org/); before 1.0, minor versions may
 break configuration.
 
+## Unreleased
+
+- `-version` reports the module version for binaries built with
+  `go install github.com/solcreek/sftp-s3@<version>` (it printed `dev`).
+
 ## 0.1.0 — 2026-11-02
 
 First public release.
