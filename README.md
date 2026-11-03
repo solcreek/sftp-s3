@@ -39,7 +39,7 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 |---|---|---|
 | `S3_BUCKET` | required | bucket to serve; optional when every user in a [JSON users file](#users-in-their-own-buckets) names a bucket |
 | `SFTP_USERS` | required | users and their credentials, see [Users](#users) |
-| `SFTP_HOST_KEY` | random per start | PEM private key (OpenSSH format, e.g. from `ssh-keygen`); set it in production |
+| `SFTP_HOST_KEY` | random per start | PEM private keys (e.g. from `ssh-keygen`), at most one per key type, concatenated; see [Host keys](#host-keys). Set it in production |
 | `SFTP_USERS_FILE`, `SFTP_HOST_KEY_FILE` | | read the value from a file instead (Docker / Kubernetes secrets); set one form, not both |
 | `PORT` | `2222` | listen port |
 | `S3_PREFIX` | `""` | key prefix in front of every user's directory, e.g. `sftp/` |
@@ -98,6 +98,34 @@ a JSON file that can place each user anywhere:
 All buckets are reached with the same credentials and region. Users stay
 confined to their bucket and prefix; their root directory itself cannot be
 removed or renamed.
+
+### Host keys
+
+A client pins the server's host key on first connect, and only the key of
+the type it negotiated: ed25519, ecdsa or rsa, depending on the client and
+its version. To replace a server without users seeing "host key changed",
+serve every key it had.
+
+`SFTP_HOST_KEY` takes several PEM private keys concatenated, at most one per
+key type. OpenSSH, PKCS#8, SEC 1 (`EC PRIVATE KEY`) and PKCS#1
+(`RSA PRIVATE KEY`) blocks are accepted, without a passphrase. SFTPGo keeps
+`id_ed25519`, `id_ecdsa` and `id_rsa` in its config directory
+(`/var/lib/sftpgo` in its Docker image):
+
+```sh
+cat id_ed25519 id_ecdsa id_rsa > host_keys      # copied from the old server
+SFTP_HOST_KEY_FILE=host_keys sftp-s3 -check     # prints each key's type and fingerprint
+ssh-keyscan -p 22 old-server | ssh-keygen -lf - # what clients have pinned
+```
+
+The fingerprints must match. The server logs each key with its type at
+start. Two keys of one type, a block that is not a private key, or text
+outside the blocks is an error. Checked 2026-11-02 against SFTPGo 2.7.6:
+`ssh-keyscan` saw the same three keys from both servers.
+
+The three keys SFTPGo generates take 2.8 KB. With a 4096-bit RSA key from
+`ssh-keygen` they take about 4.3 KB, more than an SSM Parameter Store
+standard parameter holds (4 KB): use the Advanced tier.
 
 ### S3 credentials
 

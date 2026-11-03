@@ -63,6 +63,10 @@ result of a real failure:
 - Accepted connections use Go's default TCP keepalive (15 s), which also
   keeps idle sessions alive through load balancers with idle timeouts
   (verified against an AWS NLB with a 60 s timeout).
+- Every host key in `SFTP_HOST_KEY` is offered, and the client picks the
+  algorithm. An rsa key is offered as `rsa-sha2-256`, `rsa-sha2-512` and,
+  for old clients, `ssh-rsa` (SHA-1), as `golang.org/x/crypto/ssh` does by
+  default.
 
 ## Why Go (decision record)
 
