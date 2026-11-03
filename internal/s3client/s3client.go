@@ -94,6 +94,10 @@ func New(ctx context.Context, o Options) (*s3.Client, Settings, error) {
 		so.UsePathStyle = s.PathStyle
 		so.RequestChecksumCalculation = reqSum
 		so.ResponseChecksumValidation = respSum
+		// Ranged GETs carry no full-object checksum, and the SDK would print
+		// a DEBUG line for each to stderr through its own logger, outside
+		// the server's log format.
+		so.DisableLogOutputChecksumValidationSkipped = true
 		if custom {
 			so.BaseEndpoint = aws.String(o.Endpoint)
 			so.APIOptions = append(so.APIOptions, unsignedHeaders("Accept-Encoding"))
