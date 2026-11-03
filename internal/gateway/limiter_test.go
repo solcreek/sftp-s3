@@ -486,3 +486,55 @@ func TestMaxAuthTries(t *testing.T) {
 		t.Fatalf("%d passwords left, want 1", len(tries))
 	}
 }
+
+// A login whose credentials were accepted before its client was banned (ssh
+// caches public-key results per connection) is refused when it completes.
+func TestBanArrivingDuringALoginIsHonoured(t *testing.T) {
+	client, bucket, _ := memoryStore(t)
+	_, priv, _ := ed25519.GenerateKey(rand.Reader)
+	signer, _ := ssh.NewSignerFromKey(priv)
+	srv, err := New(Config{Client: client, Bucket: bucket, HostKeys: []ssh.Signer{signer},
+		Users: map[string]User{"alice": {Password: "alice-pw"}}, ProxyProtocol: true, BanThreshold: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Before Serve: once alice's password is accepted, her client fails
+	// elsewhere and is banned.
+	check := srv.sshCfg.PasswordCallback
+	srv.sshCfg.PasswordCallback = func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+		p, err := check(c, pass)
+		if err == nil {
+			srv.bans.fail(c.RemoteAddr())
+		}
+		return p, err
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- srv.Serve(ln) }()
+	defer func() { ln.Close(); <-served }()
+
+	raw, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	if _, err := raw.Write(proxyHeader(t, 2, attacker)); err != nil {
+		t.Fatal(err)
+	}
+	c, chans, reqs, err := ssh.NewClientConn(raw, ln.Addr().String(), &ssh.ClientConfig{
+		User: "alice", Auth: []ssh.AuthMethod{ssh.Password("alice-pw")},
+		HostKeyCallback: ssh.FixedHostKey(signer.PublicKey()), Timeout: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+	conn := ssh.NewClient(c, chans, reqs)
+	defer conn.Close()
+	if s, err := conn.NewSession(); err == nil {
+		s.Close()
+		t.Fatal("a client banned during its login got a session")
+	}
+}
