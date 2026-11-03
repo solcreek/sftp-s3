@@ -72,7 +72,26 @@ var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy"), bcrypt.DefaultCo
 type authenticator struct {
 	users func() map[string]User
 	delay time.Duration // after a wrong password
+	// locate gives a user's bucket and root. The callbacks record them in
+	// the Permissions they grant, so a session lives where the user set it
+	// authenticated against says, even if SetUsers runs during the login.
+	locate func(name string, u User) (bucket, root string)
 }
+
+func (a authenticator) grant(name string, u User, ext map[string]string) *ssh.Permissions {
+	if ext == nil {
+		ext = map[string]string{}
+	}
+	ext[extBucket], ext[extRoot] = a.locate(name, u)
+	return &ssh.Permissions{Extensions: ext}
+}
+
+// Permissions.Extensions keys set by the authenticator.
+const (
+	extBucket = "sftp-s3-bucket"
+	extRoot   = "sftp-s3-root"
+	extKeyFP  = "pubkey-fp"
+)
 
 func (a authenticator) password(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
 	u, ok := a.users()[c.User()]
@@ -86,7 +105,7 @@ func (a authenticator) password(c ssh.ConnMetadata, pass []byte) (*ssh.Permissio
 		bcrypt.CompareHashAndPassword(dummyHash, pass)
 	}
 	if good {
-		return &ssh.Permissions{}, nil
+		return a.grant(c.User(), u, nil), nil
 	}
 	time.Sleep(a.delay)
 	return nil, fmt.Errorf("password rejected for %q", c.User())
@@ -99,7 +118,7 @@ func (a authenticator) publicKey(c ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Pe
 		offered := key.Marshal()
 		for _, k := range u.Keys {
 			if bytes.Equal(k.Marshal(), offered) {
-				return &ssh.Permissions{Extensions: map[string]string{"pubkey-fp": ssh.FingerprintSHA256(key)}}, nil
+				return a.grant(c.User(), u, map[string]string{extKeyFP: ssh.FingerprintSHA256(key)}), nil
 			}
 		}
 	}
