@@ -131,7 +131,7 @@ func (u *userFS) logCmd(r *sftp.Request, err error) {
 		return
 	}
 	attrs = append([]any{"bucket", u.bucket}, attrs...)
-	audit(u.sess.log, event, append(attrs, result(err)...)...)
+	audit(u.sess.metrics, u.sess.log, event, append(attrs, result(err)...)...)
 }
 
 func (u *userFS) filecmd(r *sftp.Request) error {

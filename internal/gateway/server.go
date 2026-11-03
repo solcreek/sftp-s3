@@ -68,6 +68,9 @@ type Config struct {
 	// MaxAuthTries caps login attempts per connection; 0 means 6.
 	MaxAuthTries int
 
+	// Version is reported by the sftp_s3_build_info metric.
+	Version string
+
 	banHosts int              // cap on clients tracked for bans; 0 means 10000
 	clock    func() time.Time // for tests; nil means time.Now
 }
@@ -83,6 +86,8 @@ type Server struct {
 	slots  chan struct{} // one per open connection
 	users  atomic.Pointer[map[string]User]
 	bans   *limiter // nil when bans are off
+
+	metrics metrics
 }
 
 // New validates cfg and builds a Server. It needs at least one host key and
@@ -172,9 +177,11 @@ func (s *Server) Serve(ln net.Listener) error {
 			}
 			return err
 		}
+		s.metrics.accepted()
 		select {
 		case s.slots <- struct{}{}:
 		default:
+			s.metrics.reject(rejectLimit)
 			// Health checks and floods keep arriving while full: log at
 			// most once per limitWarnEvery, with the count since last time.
 			rejected++
@@ -207,6 +214,7 @@ func (s *Server) handleConn(nc net.Conn) {
 	}
 	remote := nc.RemoteAddr().String() // a string, so JSON logs show it as one
 	if !s.bans.allow(nc.RemoteAddr()) {
+		s.metrics.reject(rejectBanned)
 		slog.Debug("connection refused: client is banned", "remote", remote)
 		return
 	}
@@ -228,17 +236,17 @@ func (s *Server) handleConn(nc net.Conn) {
 	// ssh caches public-key results per connection, so a key accepted before
 	// a ban can still complete the login after it: check once more.
 	if s.bans.banned(nc.RemoteAddr()) {
-		audit(log, evLoginFailed, "method", method, "reason", "banned")
+		audit(&s.metrics, log, evLoginFailed, "method", method, "reason", "banned")
 		return
 	}
 	nc.SetDeadline(time.Time{}) // logged in: sessions may idle and transfer as long as they like
-	sess := newSession(log)
+	sess := newSession(log, &s.metrics)
 	fs := s.userFS(ext[extBucket], ext[extRoot], sess)
 	attrs := []any{"method", method, "bucket", fs.bucket, "root", fs.root}
 	if fp != "" {
 		attrs = append(attrs, "fingerprint", fp)
 	}
-	audit(log, evLogin, attrs...)
+	audit(&s.metrics, log, evLogin, attrs...)
 	defer sess.end()
 	go ssh.DiscardRequests(reqs)
 

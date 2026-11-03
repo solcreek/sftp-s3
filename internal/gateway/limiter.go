@@ -31,6 +31,7 @@ type limiter struct {
 	mu        sync.Mutex
 	hosts     map[netip.Prefix]*host
 	nextSweep time.Time
+	total     int64 // bans so far, of every client
 }
 
 type host struct {
@@ -203,12 +204,30 @@ func (l *limiter) fail(a net.Addr) {
 		return
 	}
 	h.bans++
+	l.total++
 	d := l.banLength(h.bans)
 	h.failures, h.banned, h.until = nil, true, now.Add(d)
 	// Remember the ban for maxBan after it ends, so a repeat offence gets
 	// a longer one.
 	h.expires = h.until.Add(l.maxBan)
 	slog.Warn("client banned", "client", clientName(k), "failures", l.threshold, "within", l.window, "for", d, "bans", h.bans)
+}
+
+// counts returns how many bans there have been, and how many clients are
+// banned now. A nil *limiter (bans off) has none.
+func (l *limiter) counts() (total int64, now int) {
+	if l == nil {
+		return 0, 0
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	t := l.now()
+	for _, h := range l.hosts {
+		if h.banned && t.Before(h.until) {
+			now++
+		}
+	}
+	return l.total, now
 }
 
 // banLength is the length of the nth ban: ban, doubled for each earlier
@@ -290,7 +309,7 @@ func (s *Server) watchAuth(remote net.Addr, log *slog.Logger) (cfg *ssh.ServerCo
 		if method == "password" && err != nil {
 			wrongPasswords++
 			s.bans.fail(remote)
-			audit(log, evLoginFailed, "user", user, "method", method, "reason", failReason(err))
+			audit(&s.metrics, log, evLoginFailed, "user", user, "method", method, "reason", failReason(err))
 		}
 	}
 	password, publicKey := c.PasswordCallback, c.PublicKeyCallback
@@ -318,7 +337,7 @@ func (s *Server) watchAuth(remote net.Addr, log *slog.Logger) (cfg *ssh.ServerCo
 		case slices.Contains(methods, "publickey"):
 			reason = "no accepted key"
 		}
-		audit(log, evLoginFailed, "user", user, "method", strings.Join(methods, ","), "reason", reason)
+		audit(&s.metrics, log, evLoginFailed, "user", user, "method", strings.Join(methods, ","), "reason", reason)
 	}
 }
 

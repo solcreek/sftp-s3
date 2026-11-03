@@ -48,8 +48,10 @@ func loggedName(s string) string {
 	return fmt.Sprintf("%s...(%d bytes)", s[:cut], len(s))
 }
 
-// audit logs one audit event.
-func audit(log *slog.Logger, event string, attrs ...any) {
+// audit logs one audit event and counts it in m. It is
+// the only way audit events are logged, so metrics and the log agree.
+func audit(m *metrics, log *slog.Logger, event string, attrs ...any) {
+	m.record(event, attrs)
 	log.Info(event, append([]any{"audit", event}, attrs...)...)
 }
 
@@ -73,25 +75,26 @@ func newSessionID() string {
 // session is one logged-in connection.
 type session struct {
 	log      *slog.Logger // carries session, remote and user
+	metrics  *metrics
 	start    time.Time
 	bytesIn  atomic.Int64 // upload payload
 	bytesOut atomic.Int64 // download payload
 }
 
-func newSession(log *slog.Logger) *session {
-	return &session{log: log, start: time.Now()}
+func newSession(log *slog.Logger, m *metrics) *session {
+	return &session{log: log, metrics: m, start: time.Now()}
 }
 
 // end logs session_end.
 func (s *session) end() {
-	audit(s.log, evSessionEnd, "duration_ms", time.Since(s.start).Milliseconds(),
+	audit(s.metrics, s.log, evSessionEnd, "duration_ms", time.Since(s.start).Milliseconds(),
 		"bytes_in", s.bytesIn.Load(), "bytes_out", s.bytesOut.Load())
 }
 
 // transfer logs an upload or download of n bytes that began at start.
 func (s *session) transfer(event, bucket, key string, n int64, start time.Time, err error) {
 	attrs := []any{"bucket", bucket, "key", key, "bytes", n, "duration_ms", time.Since(start).Milliseconds()}
-	audit(s.log, event, append(attrs, result(err)...)...)
+	audit(s.metrics, s.log, event, append(attrs, result(err)...)...)
 }
 
 // Reasons a login failed, as login_failed reports them.
