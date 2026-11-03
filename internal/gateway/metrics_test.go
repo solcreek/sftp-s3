@@ -474,8 +474,12 @@ func TestMetricsRecordOther(t *testing.T) {
 	m.record(evLoginFailed, []any{"dangling"})
 	m.record("not an event", []any{"result", "ok"})
 	m.record(evUpload, []any{"result", "failed"}) // no bytes
+	// A value equal to an attribute name (here a user named "reason") is
+	// not taken for that attribute.
+	m.record(evLoginFailed, []any{"user", "reason", "reason", "banned"})
 	if m.logins[index(loginMethods[:], "other")].Load() != 1 ||
 		m.loginFailures[index(failReasons[:], "other")].Load() != 2 ||
+		m.loginFailures[index(failReasons[:], "banned")].Load() != 1 ||
 		m.ops[0][1].Load() != 1 || m.bytesIn.Load() != 0 {
 		t.Fatalf("metrics %+v", &m)
 	}
