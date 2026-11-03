@@ -48,7 +48,7 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 | `SFTP_MAX_CONNECTIONS` | `32` | concurrent connections; budget about 120 MiB of memory per concurrent large upload |
 | `SFTP_PROXY_PROTOCOL` | `off` | `on`: every connection must start with a PROXY protocol header (v1 or v2) from a load balancer, and logs show the client address it carries. Make the port reachable only through that load balancer |
 | `SFTP_BAN_THRESHOLD` | `10` | failed logins from one client IP within `SFTP_BAN_WINDOW` that get it banned; `0` turns bans off. See [Failed-login bans](#failed-login-bans) |
-| `SFTP_BAN_WINDOW` | `10m` | how far back failures are counted (Go duration: `90s`, `10m`, `1h`) |
+| `SFTP_BAN_WINDOW` | `10m` | how far back failures are counted (Go duration: `90s`, `10m`, `1h`). This and the two below take 1s to 720h (30 days) |
 | `SFTP_BAN_DURATION` | `15m` | first ban; each repeat ban doubles it |
 | `SFTP_BAN_MAX_DURATION` | `24h` | longest ban, and how long a past ban counts as a repeat offence |
 | `SFTP_MAX_AUTH_TRIES` | `6` | login attempts per connection, 1–100 |
@@ -200,6 +200,11 @@ Limitations:
   proxy's address, and one client's failures ban everyone. Use
   `SFTP_PROXY_PROTOCOL=on` there, or set `SFTP_BAN_THRESHOLD=0`. An AWS NLB
   and Fly.io with `proxy_proto` pass the client IP.
+- **A shared address is banned as a whole.** Everyone behind one NAT (an
+  office, a campus, a mobile carrier's CGNAT) shares one IPv4 address, so
+  one of them mistyping a password enough times bans all of them for the
+  ban's length. Raise `SFTP_BAN_THRESHOLD` if many users come from one
+  address.
 
 ### S3 credentials
 
