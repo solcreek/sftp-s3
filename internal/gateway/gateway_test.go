@@ -429,3 +429,24 @@ func TestUsersOnTheirOwnBuckets(t *testing.T) {
 		t.Fatalf("dave opened alice's file: %v", err)
 	}
 }
+
+// Store errors other than "not found" reach the client as failures, and the
+// session stays usable.
+func TestStoreErrorsAreReported(t *testing.T) {
+	e := newEnv(t, func(c *Config) {
+		c.Users["carol"] = User{Password: "carol-pw", Bucket: "no-such-bucket-sftp-s3-test"}
+	})
+	carol := e.sftp("carol")
+	if _, err := carol.ReadDir("/"); err == nil || errors.Is(err, os.ErrNotExist) {
+		t.Errorf("ReadDir: err = %v, want a failure other than not-exist", err)
+	}
+	if _, err := carol.Stat("/x"); err == nil || errors.Is(err, os.ErrNotExist) {
+		t.Errorf("Stat: err = %v, want a failure other than not-exist", err)
+	}
+	if err := carol.RemoveDirectory("/d"); err == nil || errors.Is(err, os.ErrNotExist) {
+		t.Errorf("RemoveDirectory: err = %v, want a failure other than not-exist", err)
+	}
+	if _, err := carol.Getwd(); err != nil {
+		t.Errorf("session unusable after errors: %v", err)
+	}
+}
