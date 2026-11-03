@@ -157,10 +157,13 @@ SFTP_USERS_FILE=users.json S3_REGION=... sftp-s3 -check
 - Only the JSON dump is read; SFTPGo's SQLite (or other) database is not.
 - An empty `key_prefix` (the bucket root in SFTPGo) is written as
   `"prefix": ""`, so the user stays at the bucket root.
-- Skipped, with a message: disabled users, users whose expiration date
-  has passed, users denied the SSH protocol
-  (`denied_protocols`), users with two-factor authentication over SSH
-  (the gateway has no second factor), users on a provider other than S3, and users left with neither a bcrypt password nor a public key.
+- Skipped, with a message: users SFTPGo would not let in over SFTP
+  (disabled, expired, or denied the SSH protocol in `denied_protocols`),
+  users with two-factor authentication over SSH (the gateway has no second
+  factor), users on a provider other than S3 or with no S3 bucket, users
+  whose `key_prefix` starts with `/` or does not end in `/`, names the
+  users file does not accept, a name listed twice (the first entry is
+  kept), and users left with neither a bcrypt password nor a public key.
   Passwords hashed another way (argon2id, PBKDF2, ...) are dropped with a
   warning; set a new one with `sftp-s3 -hash-password`.
 - Login methods denied in SFTPGo (`denied_login_methods`) stay denied: the
@@ -169,6 +172,10 @@ SFTP_USERS_FILE=users.json S3_REGION=... sftp-s3 -check
 - Imported, with a warning, but without: virtual folders, quotas, IP
   filters, permissions other than full access, group settings, and
   expiration dates still in the future.
+- Dropped without a warning: SFTPGo settings that do not affect who can
+  log in, such as file patterns, upload size limits, bandwidth limits,
+  `max_sessions`, hooks and the description. Settings inherited from a
+  group are not read at all.
 - All users share one region, endpoint and set of credentials (`S3_REGION`,
   `S3_ENDPOINT`, the AWS default chain). Users whose region or endpoint
   differs from the others are named in a warning. The S3 keys stored in
