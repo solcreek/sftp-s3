@@ -179,7 +179,7 @@ func (s *Server) Serve(ln net.Listener) error {
 			// most once per limitWarnEvery, with the count since last time.
 			rejected++
 			if time.Since(lastWarn) >= limitWarnEvery {
-				slog.Warn("connection limit reached", "remote", conn.RemoteAddr(), "max", s.cfg.MaxConns, "rejected", rejected)
+				slog.Warn("connection limit reached", "remote", conn.RemoteAddr().String(), "max", s.cfg.MaxConns, "rejected", rejected)
 				lastWarn, rejected = time.Now(), 0
 			}
 			conn.Close()
@@ -200,41 +200,50 @@ func (s *Server) handleConn(nc net.Conn) {
 	if s.cfg.ProxyProtocol {
 		pc, err := readProxyHeader(nc)
 		if err != nil {
-			slog.Log(context.Background(), handshakeLogLevel(err), "no valid PROXY protocol header", "remote", nc.RemoteAddr(), "err", err)
+			slog.Log(context.Background(), handshakeLogLevel(err), "no valid PROXY protocol header", "remote", nc.RemoteAddr().String(), "err", err)
 			return
 		}
 		nc = pc
 	}
+	remote := nc.RemoteAddr().String() // a string, so JSON logs show it as one
 	if !s.bans.allow(nc.RemoteAddr()) {
-		slog.Debug("connection refused: client is banned", "remote", nc.RemoteAddr())
+		slog.Debug("connection refused: client is banned", "remote", remote)
 		return
 	}
-	sshCfg, authDone := s.watchAuth(nc.RemoteAddr())
+	log := slog.With("session", newSessionID(), "remote", remote)
+	sshCfg, authDone := s.watchAuth(nc.RemoteAddr(), log)
 	sc, chans, reqs, err := ssh.NewServerConn(nc, sshCfg)
 	authDone(err)
 	if err != nil {
-		slog.Log(context.Background(), handshakeLogLevel(err), "handshake failed", "remote", nc.RemoteAddr(), "err", err)
+		log.Log(context.Background(), handshakeLogLevel(err), "handshake failed", "err", err)
 		return
 	}
 	defer sc.Close()
+	log = log.With("user", sc.User())
+	ext := sc.Permissions.Extensions
+	method, fp := "password", ext[extKeyFP]
+	if fp != "" {
+		method = "publickey"
+	}
 	// ssh caches public-key results per connection, so a key accepted before
 	// a ban can still complete the login after it: check once more.
 	if s.bans.banned(nc.RemoteAddr()) {
-		slog.Info("login refused: client was banned during the login", "user", sc.User(), "remote", nc.RemoteAddr())
+		audit(log, evLoginFailed, "method", method, "reason", "banned")
 		return
 	}
 	nc.SetDeadline(time.Time{}) // logged in: sessions may idle and transfer as long as they like
-	method := "password"
-	ext := sc.Permissions.Extensions
-	if fp, ok := ext[extKeyFP]; ok {
-		method = fp
+	sess := newSession(log)
+	fs := s.userFS(ext[extBucket], ext[extRoot], sess)
+	attrs := []any{"method", method, "bucket", fs.bucket, "root", fs.root}
+	if fp != "" {
+		attrs = append(attrs, "fingerprint", fp)
 	}
-	fs := s.userFS(ext[extBucket], ext[extRoot])
-	slog.Info("login", "user", sc.User(), "remote", nc.RemoteAddr(), "auth", method, "bucket", fs.bucket, "root", fs.root)
+	audit(log, evLogin, attrs...)
+	defer sess.end()
 	go ssh.DiscardRequests(reqs)
 
 	var wg sync.WaitGroup
-	defer wg.Wait()
+	defer wg.Wait() // before sess.end: open files are closed, and logged, first
 	for nch := range chans {
 		if nch.ChannelType() != "session" {
 			nch.Reject(ssh.UnknownChannelType, "only session channels are supported")
@@ -276,7 +285,7 @@ func serveSession(ch ssh.Channel, reqs <-chan *ssh.Request, fs *userFS) {
 		go ssh.DiscardRequests(reqs)
 		srv := sftp.NewRequestServer(ch, sftp.Handlers{FileGet: fs, FilePut: fs, FileCmd: fs, FileList: fs})
 		if err := srv.Serve(); err != nil && !errors.Is(err, io.EOF) {
-			slog.Info("sftp session ended", "root", fs.root, "err", err)
+			fs.sess.log.Info("sftp session ended", "err", err)
 		}
 		srv.Close()
 		return
@@ -298,10 +307,11 @@ func (s *Server) locate(name string, u User) (bucket, root string) {
 	return s.cfg.Bucket, s.cfg.Prefix + name + "/"
 }
 
-// userFS is a filesystem confined to s3://bucket/root.
-func (s *Server) userFS(bucket, root string) *userFS {
+// userFS is a filesystem confined to s3://bucket/root, which logs its
+// operations as sess's.
+func (s *Server) userFS(bucket, root string, sess *session) *userFS {
 	return &userFS{
-		client: s.cfg.Client, bucket: bucket, root: root,
+		client: s.cfg.Client, bucket: bucket, root: root, sess: sess,
 		partSize: s.cfg.PartSize, maxReorder: s.cfg.MaxReorder,
 	}
 }

@@ -26,6 +26,7 @@ type userFS struct {
 	root       string // "" (the bucket root) or a prefix ending in "/"
 	partSize   int64
 	maxReorder int64
+	sess       *session // logs the operations as audit events
 }
 
 // key maps an SFTP path ("/a/b.txt") to an S3 key ("<root>a/b.txt").

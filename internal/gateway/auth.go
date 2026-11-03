@@ -108,7 +108,11 @@ func (a authenticator) password(c ssh.ConnMetadata, pass []byte) (*ssh.Permissio
 		return a.grant(c.User(), u, nil), nil
 	}
 	time.Sleep(a.delay)
-	return nil, fmt.Errorf("password rejected for %q", c.User())
+	reason := errWrongPassword
+	if !ok {
+		reason = errUnknownUser
+	}
+	return nil, fmt.Errorf("password rejected for %q: %w", c.User(), reason)
 }
 
 // publicKey is not delayed on failure: clients offer every key they hold,
