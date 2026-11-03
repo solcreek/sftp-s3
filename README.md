@@ -137,6 +137,40 @@ Configuration is environment-only; the flags are tools:
 | `-check` | load the configuration as the server would, reach the bucket, print a summary, exit non-zero on any problem |
 | `-hash-password` | read a password (prompt, or a line on stdin) and print its bcrypt hash |
 | `-version` | print the version |
+| `import-sftpgo <dump.json>` | convert an SFTPGo data dump to a [JSON users file](#users-in-their-own-buckets); see [Moving from SFTPGo](#moving-from-sftpgo) |
+
+## Moving from SFTPGo
+
+`sftp-s3 import-sftpgo` turns the users of an SFTPGo data dump into a
+[JSON users file](#users-in-their-own-buckets). Users keep their passwords
+(SFTPGo stores bcrypt hashes, which are copied as they are), their public
+keys, and their bucket and key prefix.
+
+```sh
+# from the REST API (an admin token), or run `sftpgo dumpdata` on the host
+curl -fsS -H "Authorization: Bearer $TOKEN" \
+  "https://sftpgo.example.com/api/v2/dumpdata?output-data=1" > dump.json
+sftp-s3 import-sftpgo dump.json > users.json   # warnings go to stderr
+SFTP_USERS_FILE=users.json S3_REGION=... sftp-s3 -check
+```
+
+- Only the JSON dump is read; SFTPGo's SQLite (or other) database is not.
+- An empty `key_prefix` (the bucket root in SFTPGo) is written as
+  `"prefix": ""`, so the user stays at the bucket root.
+- Skipped, with a message: disabled users, users on a provider other than
+  S3, and users left with neither a bcrypt password nor a public key.
+  Passwords hashed another way (argon2id, PBKDF2, ...) are dropped with a
+  warning; set a new one with `sftp-s3 -hash-password`.
+- Imported, with a warning, but without: virtual folders, quotas, IP
+  filters, permissions other than full access, group settings, and
+  expiration dates.
+- All users share one region, endpoint and set of credentials (`S3_REGION`,
+  `S3_ENDPOINT`, the AWS default chain). Users whose region or endpoint
+  differs from the others are named in a warning. The S3 keys stored in
+  the dump are never read or copied.
+
+The dump holds password hashes: keep it and `users.json` private, and
+delete the dump when done.
 
 ## Supported operations
 
