@@ -13,7 +13,7 @@ ssh-keygen -t ed25519 -N '' -f host_key && chmod 644 host_key
 # 2. A user, here "demo", who logs in with your SSH key...
 echo "demo:$(cat ~/.ssh/id_ed25519.pub)" > users
 #    ...and/or with a password, stored as a bcrypt hash:
-echo "demo:$(docker run --rm -i ghcr.io/solcreek/sftp-s3:0.1 -hash-password)" >> users
+echo "demo:$(docker run --rm -i ghcr.io/solcreek/sftp-s3:0.2 -hash-password)" >> users
 chmod 644 users
 
 # 3. Start the store, create the bucket, start the server.

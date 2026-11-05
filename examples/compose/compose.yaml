@@ -29,7 +29,7 @@ services:
         echo "could not create the bucket (last status $$code)"; exit 1
 
   sftp:
-    image: ${SFTP_S3_IMAGE:-ghcr.io/solcreek/sftp-s3:0.1}
+    image: ${SFTP_S3_IMAGE:-ghcr.io/solcreek/sftp-s3:0.2}
     depends_on:
       create-bucket:
         condition: service_completed_successfully

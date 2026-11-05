@@ -28,7 +28,7 @@ kill_signal = "SIGTERM"
 kill_timeout = 120
 
 [build]
-  image = "ghcr.io/solcreek/sftp-s3:0.1"
+  image = "ghcr.io/solcreek/sftp-s3:0.2"
 
 [env]
   # Fly's proxy prepends a PROXY protocol header (handlers below), so the

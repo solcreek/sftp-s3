@@ -61,7 +61,7 @@ variable "force_destroy_bucket" {
 variable "image" {
   description = "Container image to run. Changing it rolls the gateway (ECS) or replaces the instance (EC2)."
   type        = string
-  default     = "ghcr.io/solcreek/sftp-s3:0.1"
+  default     = "ghcr.io/solcreek/sftp-s3:0.2"
 }
 
 variable "users" {

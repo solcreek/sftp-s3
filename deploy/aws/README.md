@@ -27,7 +27,7 @@ provider "aws" {
 }
 
 module "sftp" {
-  source = "github.com/solcreek/sftp-s3//deploy/aws?ref=v0.1.0"
+  source = "github.com/solcreek/sftp-s3//deploy/aws?ref=v0.2.0"
 
   bucket_name   = "my-sftp-uploads"
   allowed_cidrs = ["203.0.113.0/24"]
@@ -103,7 +103,7 @@ configuration. Instead:
 | `allowed_cidrs` | required | who may reach port 22 |
 | `users` | `null` | `SFTP_USERS` entries, one per element; `null` = manage the parameter yourself |
 | `compute` | `"ecs"` | or `"ec2"` |
-| `image` | `ghcr.io/solcreek/sftp-s3:0.1` | any registry; private ECR images work too |
+| `image` | `ghcr.io/solcreek/sftp-s3:0.2` | any registry; private ECR images work too |
 | `create_bucket` | `true` | `false`: use an existing bucket (see above) |
 | `generate_host_key` | `true` | `false`: manage the parameter yourself |
 | `s3_prefix` | `""` | every user lives under `<prefix><user>/` |
