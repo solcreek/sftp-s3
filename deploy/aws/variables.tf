@@ -109,7 +109,7 @@ variable "max_connections" {
 }
 
 variable "log_retention_days" {
-  description = "CloudWatch log retention (ECS)."
+  description = "Retention of the gateway's CloudWatch log group, which holds the audit log."
   type        = number
   default     = 30
 }
