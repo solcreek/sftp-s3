@@ -56,6 +56,7 @@ sftp -P 2222 alice@localhost                # put / get / ls / mkdir / rm / rena
 | `SFTP_BAN_DURATION` | `15m` | first ban; each repeat ban doubles it |
 | `SFTP_BAN_MAX_DURATION` | `24h` | longest ban, and how long a past ban counts as a repeat offence |
 | `SFTP_MAX_AUTH_TRIES` | `6` | login attempts per connection, 1–100 |
+| `SFTP_KEYBOARD_INTERACTIVE` | `on` | `on` or `off`: offer `keyboard-interactive` login, which asks for the user's password (see [Users](#users)) |
 | `SFTP_LOG_FORMAT` | `text` | `text` (slog's `key=value` lines) or `json` (one JSON object per line, for log collectors). See [Audit log](#audit-log) |
 | `SFTP_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error`. Audit events are at `info` |
 | `SFTP_METRICS_ADDR` | off | `host:port` or `:port` of an HTTP listener serving `/healthz` and `/metrics`, e.g. `:9090` or `127.0.0.1:9090`. Unset means no HTTP listener at all. It has no authentication: never expose it publicly. See [Metrics and health](#metrics-and-health) |
@@ -83,6 +84,14 @@ Make a hash with `sftp-s3 -hash-password` (it prompts, or reads a line from
 stdin). `SFTP_USERS='alice:a-long-password'` is fine for a first try; the server logs
 a warning for every plaintext password. User names may not contain `/`, `.`
 or spaces: they become S3 key prefixes.
+
+A password logs in over `password` or `keyboard-interactive`. The second asks
+one hidden question, `Password:`, and is checked, delayed and counted toward
+bans exactly like the first. SFTPGo and OpenSSH offer both, and many clients
+pick `keyboard-interactive` when they see it, so users moved from SFTPGo keep
+logging in the way they did. ssh offers methods per server, not per user, so
+key-only users are asked too and always fail. `SFTP_KEYBOARD_INTERACTIVE=off`
+stops offering it.
 
 Each user lives at `s3://$S3_BUCKET/$S3_PREFIX<user>/` and cannot see
 anything outside it.
@@ -234,8 +243,8 @@ operation logs exactly one event. Every event also has:
 
 | `audit` | when | other attributes |
 |---|---|---|
-| `login` | a client logged in | `method` (`password` or `publickey`), `fingerprint` (SHA256 of the key, for `publickey`), `bucket`, `root` (key prefix of the user's files) |
-| `login_failed` | a wrong password; a connection that tried to log in and closed without succeeding or sending a wrong password; a login refused because the client was banned meanwhile | `method` (`password`, `publickey`, or the methods tried, comma-separated), `reason` (`wrong password`, `unknown user`, `no accepted key`, `no accepted method`, `banned`) |
+| `login` | a client logged in | `method` (`password`, `keyboard-interactive` or `publickey`), `fingerprint` (SHA256 of the key, for `publickey`), `bucket`, `root` (key prefix of the user's files) |
+| `login_failed` | a wrong password (over either method); a connection that tried to log in and closed without succeeding or sending a wrong password; a login refused because the client was banned meanwhile | `method` (`password`, `keyboard-interactive`, `publickey`, or the methods tried, comma-separated), `reason` (`wrong password`, `unknown user`, `no accepted key`, `no accepted method`, `banned`) |
 | `upload` | the S3 upload completed or was aborted: on close, or when the client went away | `bucket`, `key`, `bytes`, `duration_ms`, `result`, `error` |
 | `download` | the file was closed, or the client went away | `bucket`, `key`, `bytes` (sent to the client; ranges read again count again, so it can exceed the object size), `duration_ms`, `result`, `error` |
 | `mkdir`, `rmdir` | | `bucket`, `key` (the `dir/` marker), `result`, `error` |
@@ -299,7 +308,7 @@ port, or if the address is not `host:port` with a numeric port.
 | `sftp_s3_connections_open` | gauge | | connections open now, logged in or not |
 | `sftp_s3_connections_max` | gauge | | `SFTP_MAX_CONNECTIONS` |
 | `sftp_s3_sessions_active` | gauge | | logged-in connections now (`login` events minus `session_end` events) |
-| `sftp_s3_logins_total` | counter | `method`: `password`, `publickey`, `other` | `login` events |
+| `sftp_s3_logins_total` | counter | `method`: `password`, `publickey`, `keyboard-interactive`, `other` | `login` events |
 | `sftp_s3_login_failures_total` | counter | `reason`: `unknown user`, `wrong password`, `banned`, `no accepted method`, `no accepted key`, `other` | `login_failed` events |
 | `sftp_s3_operations_total` | counter | `op`: `upload`, `download`, `mkdir`, `remove`, `rmdir`, `rename`, `setstat`; `result`: `ok`, `failed` | file operation events |
 | `sftp_s3_bytes_received_total` | counter | | upload payload bytes (the `bytes` of `upload` events), counted when each upload ends, failed uploads included |
@@ -421,6 +430,10 @@ are immutable), symlinks, and `statvfs`.
 | OpenSSH `sftp` (macOS, Linux) | password and key login; every operation above | 2026-11-02, against AWS S3, GCS, R2 and S3-compatible stores |
 | WinSCP 6 (`winscp.com` scripting, Windows 11) | password login (the server offers `password,publickey`; WinSCP needs no keyboard-interactive); upload of 20 MiB through `.filepart` and rename, download with matching MD5, mkdir, move, rm, rmdir | 2026-11-03, against AWS S3 (ap-northeast-1) |
 | FileZilla 3.71.1 (GUI, Windows 11) | password login (no keyboard-interactive needed); host key fingerprint shown matches the server's; upload of 5 MiB, download with matching SHA-256, mkdir, rename, move into a directory, recursive delete (rm + rmdir), listings | 2026-11-05, against AWS S3 (ap-northeast-1) |
+
+These runs predate `keyboard-interactive`, so they show that the clients fall
+back to `password` without it. Offered, clients that prefer it (FileZilla
+does, against SFTPGo) use it with the same password.
 
 WinSCP uploads large files to `name.filepart` and renames it when done,
 which copies the object once more in S3; turning off "transfer to

@@ -14,8 +14,14 @@ func TestLoadLoginLimits(t *testing.T) {
 	if err := loadLoginLimits(envMap(nil), &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.BanThreshold != 0 || cfg.BanWindow != 0 || cfg.BanDuration != 0 || cfg.BanMaxDuration != 0 || cfg.MaxAuthTries != 0 {
+	if cfg.BanThreshold != 0 || cfg.BanWindow != 0 || cfg.BanDuration != 0 || cfg.BanMaxDuration != 0 || cfg.MaxAuthTries != 0 || cfg.NoKeyboardInteractive {
 		t.Fatalf("unset variables changed the config: %+v", cfg)
+	}
+	for v, off := range map[string]bool{"on": false, "off": true} {
+		var c gateway.Config
+		if err := loadLoginLimits(envMap(map[string]string{"SFTP_KEYBOARD_INTERACTIVE": v}), &c); err != nil || c.NoKeyboardInteractive != off {
+			t.Errorf("SFTP_KEYBOARD_INTERACTIVE=%s: NoKeyboardInteractive %v, err %v", v, c.NoKeyboardInteractive, err)
+		}
 	}
 
 	err := loadLoginLimits(envMap(map[string]string{
@@ -35,11 +41,12 @@ func TestLoadLoginLimits(t *testing.T) {
 	}
 
 	for name, v := range map[string]string{
-		"SFTP_BAN_THRESHOLD":    "-1",
-		"SFTP_BAN_WINDOW":       "10",
-		"SFTP_BAN_DURATION":     "500ms",
-		"SFTP_BAN_MAX_DURATION": "forever",
-		"SFTP_MAX_AUTH_TRIES":   "0",
+		"SFTP_BAN_THRESHOLD":        "-1",
+		"SFTP_BAN_WINDOW":           "10",
+		"SFTP_BAN_DURATION":         "500ms",
+		"SFTP_BAN_MAX_DURATION":     "forever",
+		"SFTP_MAX_AUTH_TRIES":       "0",
+		"SFTP_KEYBOARD_INTERACTIVE": "no",
 	} {
 		if err := loadLoginLimits(envMap(map[string]string{name: v}), &cfg); err == nil || !strings.Contains(err.Error(), name) {
 			t.Errorf("%s=%s: err = %v, want it to mention %s", name, v, err, name)

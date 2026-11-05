@@ -9,8 +9,9 @@ import (
 )
 
 // loadLoginLimits applies SFTP_BAN_THRESHOLD (0 turns bans off),
-// SFTP_BAN_WINDOW, SFTP_BAN_DURATION, SFTP_BAN_MAX_DURATION and
-// SFTP_MAX_AUTH_TRIES to cfg. Unset variables keep the gateway defaults.
+// SFTP_BAN_WINDOW, SFTP_BAN_DURATION, SFTP_BAN_MAX_DURATION,
+// SFTP_MAX_AUTH_TRIES and SFTP_KEYBOARD_INTERACTIVE (on or off) to cfg.
+// Unset variables keep the gateway defaults.
 // maxBanSetting bounds the ban durations: longer ones are more likely typos
 // than intent, and doubling a bounded ban cannot overflow.
 const maxBanSetting = 30 * 24 * time.Hour
@@ -46,6 +47,13 @@ func loadLoginLimits(getenv func(string) string, cfg *gateway.Config) error {
 			return fmt.Errorf("SFTP_MAX_AUTH_TRIES: %q must be an integer from 1 to 100", v)
 		}
 		cfg.MaxAuthTries = n
+	}
+	switch v := getenv("SFTP_KEYBOARD_INTERACTIVE"); v {
+	case "", "on":
+	case "off":
+		cfg.NoKeyboardInteractive = true
+	default:
+		return fmt.Errorf("SFTP_KEYBOARD_INTERACTIVE: %q must be on or off", v)
 	}
 	return nil
 }
