@@ -204,9 +204,10 @@ func convertSFTPGoUser(su sftpgoUser, warn io.Writer) (importedUser, bool) {
 	u := importedUser{Username: name, Bucket: s3.Bucket, Prefix: s3.KeyPrefix}
 	// A login method SFTPGo denies stays denied by leaving its credential
 	// out. "password" denies it on every protocol, "password-over-SSH" on
-	// SFTP only. The gateway's keyboard-interactive asks for that same
-	// password, and it offers no multi-step methods, so denying those
-	// changes nothing here.
+	// SFTP only. The gateway's keyboard-interactive accepts only that same
+	// password, so a user denied it alone keeps the password, which opens
+	// nothing the password method does not; the warning says the method is
+	// offered all the same. The multi-step methods are not offered at all.
 	denied := su.Filters.DeniedLoginMethods
 	if su.Password != "" {
 		switch {
@@ -214,6 +215,9 @@ func convertSFTPGoUser(su sftpgoUser, warn io.Writer) (importedUser, bool) {
 			note("password login is denied in SFTPGo; password not copied")
 		case isBcrypt(su.Password):
 			u.PasswordHash = su.Password
+			if slices.Contains(denied, "keyboard-interactive") {
+				note("keyboard-interactive login is denied in SFTPGo; sftp-s3 offers it with the same password (SFTP_KEYBOARD_INTERACTIVE=off turns it off for every user)")
+			}
 		default:
 			note("password is not a bcrypt hash; dropped (set a new one with sftp-s3 -hash-password)")
 		}
