@@ -420,11 +420,16 @@ are immutable), symlinks, and `statvfs`.
 |---|---|---|
 | OpenSSH `sftp` (macOS, Linux) | password and key login; every operation above | 2026-11-02, against AWS S3, GCS, R2 and S3-compatible stores |
 | WinSCP 6 (`winscp.com` scripting, Windows 11) | password login (the server offers `password,publickey`; WinSCP needs no keyboard-interactive); upload of 20 MiB through `.filepart` and rename, download with matching MD5, mkdir, move, rm, rmdir | 2026-11-03, against AWS S3 (ap-northeast-1) |
-| FileZilla | not yet verified | |
+| FileZilla 3.71.1 (GUI, Windows 11) | password login (no keyboard-interactive needed); host key fingerprint shown matches the server's; upload of 5 MiB, download with matching SHA-256, mkdir, rename, move into a directory, recursive delete (rm + rmdir), listings | 2026-11-05, against AWS S3 (ap-northeast-1) |
 
-WinSCP and FileZilla upload large files to `name.filepart` and rename it
-when done, which copies the object once more in S3; turning off
-"transfer to temporary filename" avoids that.
+WinSCP uploads large files to `name.filepart` and renames it when done,
+which copies the object once more in S3; turning off "transfer to
+temporary filename" avoids that. FileZilla writes the final name directly.
+
+FileZilla runs uploads and downloads on a second connection, so each
+transfer may show as its own login. A first-time user who takes longer than
+the 30 s login timeout at FileZilla's unknown-host-key prompt loses that
+connection; FileZilla reconnects by itself once they accept.
 
 The server answers a file's close only once S3 has the whole object, so a
 client sees a pause at 100% while the gateway sends what it still holds
