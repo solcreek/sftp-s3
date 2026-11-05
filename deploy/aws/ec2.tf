@@ -1,5 +1,6 @@
 # compute = "ec2": one Graviton instance with a fixed address, the
-# container on port 22, and no sshd (administration is SSM Session Manager).
+# container on the SFTP port, and no sshd (administration is SSM Session
+# Manager).
 #
 # Deploys: changing `image`, managed users or the host key replaces the
 # instance (the Elastic IP moves to the new one), so expect a few minutes
@@ -63,6 +64,7 @@ resource "aws_instance" "this" {
   user_data_replace_on_change = true
   user_data = templatefile("${path.module}/ec2-user-data.sh", {
     region          = local.region
+    port            = var.port
     image           = var.image
     config_hash     = local.config_hash
     param_prefix    = "/${var.name}"

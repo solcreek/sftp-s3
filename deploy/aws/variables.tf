@@ -15,8 +15,18 @@ variable "compute" {
 }
 
 variable "allowed_cidrs" {
-  description = "Client CIDRs allowed to reach port 22. Use [\"0.0.0.0/0\"] only on purpose."
+  description = "Client CIDRs allowed to reach the SFTP port. Use [\"0.0.0.0/0\"] only on purpose."
   type        = list(string)
+}
+
+variable "port" {
+  description = "Public SFTP port. Keep a replaced server's port (SFTPGo's default is 2022) so clients need no change."
+  type        = number
+  default     = 22
+  validation {
+    condition     = var.port >= 1 && var.port <= 65535 && floor(var.port) == var.port
+    error_message = "port must be an integer from 1 to 65535."
+  }
 }
 
 # ---------- bucket ----------

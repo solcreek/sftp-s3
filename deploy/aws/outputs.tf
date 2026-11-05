@@ -1,6 +1,11 @@
 output "sftp_address" {
-  description = "Where clients connect (port 22)."
+  description = "Where clients connect, on `sftp_port`."
   value       = var.compute == "ecs" ? aws_lb.this[0].dns_name : aws_eip.ec2[0].public_ip
+}
+
+output "sftp_port" {
+  description = "The public SFTP port."
+  value       = var.port
 }
 
 output "public_ips" {
@@ -17,7 +22,8 @@ output "known_hosts" {
   description = "Lines for ~/.ssh/known_hosts, so clients can pin the host key (generated host key only)."
   value = var.generate_host_key ? join("\n", [
     for addr in concat([var.compute == "ecs" ? aws_lb.this[0].dns_name : aws_eip.ec2[0].public_ip], var.compute == "ecs" ? aws_eip.nlb[*].public_ip : []) :
-    "${addr} ${trimspace(tls_private_key.host[0].public_key_openssh)}"
+    # known_hosts names a non-default port as [host]:port.
+    "${var.port == 22 ? addr : "[${addr}]:${var.port}"} ${trimspace(tls_private_key.host[0].public_key_openssh)}"
   ]) : null
 }
 

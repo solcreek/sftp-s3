@@ -117,8 +117,8 @@ resource "aws_vpc_security_group_ingress_rule" "nlb_clients" {
   security_group_id = aws_security_group.nlb[0].id
   description       = "SFTP clients"
   ip_protocol       = "tcp"
-  from_port         = 22
-  to_port           = 22
+  from_port         = var.port
+  to_port           = var.port
   cidr_ipv4         = each.value
 }
 
@@ -178,7 +178,7 @@ resource "aws_lb_target_group" "this" {
 resource "aws_lb_listener" "this" {
   count             = local.ecs
   load_balancer_arn = aws_lb.this[0].arn
-  port              = 22
+  port              = var.port
   protocol          = "TCP"
   default_action {
     type             = "forward"

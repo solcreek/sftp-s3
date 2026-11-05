@@ -4,7 +4,7 @@
 # Configuration hash (a change replaces the instance): ${config_hash}
 set -euxo pipefail
 
-# Port 22 belongs to SFTP; administration goes through SSM Session Manager.
+# Port 22 may belong to SFTP; administration goes through SSM Session Manager.
 systemctl disable --now sshd.socket sshd.service || true
 
 dnf install -y docker
@@ -21,7 +21,7 @@ case "$image" in # private ECR images need a login; public images do not
 esac
 docker pull "$image"
 docker rm -f sftp-s3 2>/dev/null || true
-exec docker run --rm --name sftp-s3 -p 22:2222 \
+exec docker run --rm --name sftp-s3 -p ${port}:2222 \
   -e PORT=2222 -e AWS_REGION=${region} \
   -e S3_BUCKET=${bucket} -e S3_PREFIX=${s3_prefix} -e SFTP_MAX_CONNECTIONS=${max_connections} \
   -e SFTP_LOG_FORMAT=json \
