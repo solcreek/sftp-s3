@@ -109,10 +109,11 @@ func (a authenticator) password(c ssh.ConnMetadata, pass []byte) (*ssh.Permissio
 // once would reveal which ones have a password.
 func (a authenticator) keyboardInteractive(c ssh.ConnMetadata, ask ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
 	answers, err := ask("", "", []string{"Password: "}, []bool{false})
-	if err != nil {
+	if err != nil { // also how ssh reports a reply with the wrong number of answers
+		time.Sleep(a.delay)
 		return nil, fmt.Errorf("keyboard-interactive for %q: %w", loggedName(c.User()), err)
 	}
-	if len(answers) != 1 { // ssh checks the count too; never index past it
+	if len(answers) != 1 { // never index past what ssh checked
 		time.Sleep(a.delay)
 		return nil, fmt.Errorf("keyboard-interactive for %q: %d answers to 1 question: %w", loggedName(c.User()), len(answers), errWrongPassword)
 	}
