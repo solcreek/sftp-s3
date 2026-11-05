@@ -4,7 +4,7 @@ All notable changes are listed here. The project follows
 [Semantic Versioning](https://semver.org/); before 1.0, minor versions may
 break configuration.
 
-## Unreleased
+## 0.2.0 — 2026-11-05
 
 - Health check and Prometheus metrics, off by default:
   `SFTP_METRICS_ADDR` (e.g. `:9090`) starts an HTTP listener, separate from
