@@ -1,5 +1,5 @@
 # Calls the module in deploy/aws. Outside this repository, use
-#   source = "github.com/solcreek/sftp-s3//deploy/aws?ref=v0.2.1"
+#   source = "github.com/solcreek/sftp-s3//deploy/aws?ref=v0.2.2"
 # Copy terraform.tfvars.example to terraform.tfvars and edit it.
 
 terraform {

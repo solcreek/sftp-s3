@@ -30,7 +30,7 @@ provider "aws" {
 }
 
 module "sftp" {
-  source = "github.com/solcreek/sftp-s3//deploy/aws?ref=v0.2.1"
+  source = "github.com/solcreek/sftp-s3//deploy/aws?ref=v0.2.2"
 
   bucket_name   = "my-sftp-uploads"
   allowed_cidrs = ["203.0.113.0/24"]
