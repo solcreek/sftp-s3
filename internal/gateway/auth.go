@@ -91,9 +91,37 @@ const (
 	extBucket = "sftp-s3-bucket"
 	extRoot   = "sftp-s3-root"
 	extKeyFP  = "pubkey-fp"
+	extMethod = "sftp-s3-method" // set when the method is not password or publickey
 )
 
+const methodKeyboardInteractive = "keyboard-interactive"
+
 func (a authenticator) password(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
+	return a.checkPassword(c, pass, nil)
+}
+
+// keyboardInteractive asks one question, the password, as SFTPGo and
+// OpenSSH do, and checks the answer exactly as password does. Clients that
+// see both methods often prefer this one.
+//
+// It is offered to every user name, key-only and unknown ones included:
+// ssh offers methods per server, not per user, and refusing those names at
+// once would reveal which ones have a password.
+func (a authenticator) keyboardInteractive(c ssh.ConnMetadata, ask ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+	answers, err := ask("", "", []string{"Password: "}, []bool{false})
+	if err != nil {
+		return nil, fmt.Errorf("keyboard-interactive for %q: %w", loggedName(c.User()), err)
+	}
+	if len(answers) != 1 { // ssh checks the count too; never index past it
+		time.Sleep(a.delay)
+		return nil, fmt.Errorf("keyboard-interactive for %q: %d answers to 1 question: %w", loggedName(c.User()), len(answers), errWrongPassword)
+	}
+	return a.checkPassword(c, []byte(answers[0]), map[string]string{extMethod: methodKeyboardInteractive})
+}
+
+// checkPassword grants the login, with ext among its extensions, if pass is
+// the user's password.
+func (a authenticator) checkPassword(c ssh.ConnMetadata, pass []byte, ext map[string]string) (*ssh.Permissions, error) {
 	u, ok := a.users()[c.User()]
 	var good bool
 	switch {
@@ -105,7 +133,7 @@ func (a authenticator) password(c ssh.ConnMetadata, pass []byte) (*ssh.Permissio
 		bcrypt.CompareHashAndPassword(dummyHash, pass)
 	}
 	if good {
-		return a.grant(c.User(), u, nil), nil
+		return a.grant(c.User(), u, ext), nil
 	}
 	time.Sleep(a.delay)
 	reason := errWrongPassword

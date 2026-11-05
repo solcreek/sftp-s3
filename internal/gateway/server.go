@@ -68,6 +68,10 @@ type Config struct {
 	// MaxAuthTries caps login attempts per connection; 0 means 6.
 	MaxAuthTries int
 
+	// NoKeyboardInteractive stops offering keyboard-interactive, which
+	// otherwise asks for the password as password login does.
+	NoKeyboardInteractive bool
+
 	// Version is reported by the sftp_s3_build_info metric.
 	Version string
 
@@ -134,6 +138,9 @@ func New(cfg Config) (*Server, error) {
 		PasswordCallback:  auth.password,
 		PublicKeyCallback: auth.publicKey,
 		MaxAuthTries:      cfg.MaxAuthTries,
+	}
+	if !cfg.NoKeyboardInteractive {
+		s.sshCfg.KeyboardInteractiveCallback = auth.keyboardInteractive
 	}
 	for _, k := range cfg.HostKeys {
 		s.sshCfg.AddHostKey(k)
@@ -238,8 +245,11 @@ func (s *Server) handleConn(nc net.Conn) {
 	log = log.With("user", sc.User())
 	ext := sc.Permissions.Extensions
 	method, fp := "password", ext[extKeyFP]
-	if fp != "" {
+	switch {
+	case fp != "":
 		method = "publickey"
+	case ext[extMethod] != "":
+		method = ext[extMethod]
 	}
 	// ssh caches public-key results per connection, so a key accepted before
 	// a ban can still complete the login after it: check once more.

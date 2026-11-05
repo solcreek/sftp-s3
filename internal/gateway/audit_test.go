@@ -228,13 +228,24 @@ func checkFailed(t *testing.T, ev event, user, method, reason string) {
 	check(t, ev, map[string]any{"user": user, "method": method, "reason": reason})
 }
 
-// keyboardInteractiveOnce makes a client try keyboard-interactive, which the
-// server does not offer, and then give up.
+// keyboardInteractiveOnce makes a client try keyboard-interactive (in these
+// tests, with the server not offering it) and then give up.
 func keyboardInteractiveOnce(ctx *ssh.ClientAuthContext) (ssh.AuthMethod, error) {
 	if slices.Contains(ctx.TriedMethods, "keyboard-interactive") {
 		return nil, errors.New("giving up")
 	}
 	return ssh.KeyboardInteractive(func(string, string, []string, []bool) ([]string, error) { return nil, nil }), nil
+}
+
+// answer is keyboard-interactive answering each question with pass.
+func answer(pass string) ssh.AuthMethod {
+	return ssh.KeyboardInteractive(func(_, _ string, questions []string, _ []bool) ([]string, error) {
+		answers := make([]string, len(questions))
+		for i := range answers {
+			answers[i] = pass
+		}
+		return answers, nil
+	})
 }
 
 func TestAuditFailedLogins(t *testing.T) {
@@ -244,10 +255,19 @@ func TestAuditFailedLogins(t *testing.T) {
 		user   string
 		auth   []ssh.AuthMethod
 		cb     func(*ssh.ClientAuthContext) (ssh.AuthMethod, error)
+		noKI   bool // the server does not offer keyboard-interactive
 		method string
 		reason string
 		n      int // login_failed events
 	}{
+		{name: "wrong keyboard-interactive answer", user: "alice", auth: []ssh.AuthMethod{answer("not-alice-pw")},
+			method: "keyboard-interactive", reason: "wrong password", n: 1},
+		{name: "each wrong keyboard-interactive answer", user: "alice", auth: []ssh.AuthMethod{ssh.RetryableAuthMethod(answer("not-alice-pw"), 3)},
+			method: "keyboard-interactive", reason: "wrong password", n: 3},
+		{name: "keyboard-interactive for an unknown user", user: "mallory", auth: []ssh.AuthMethod{answer("not-alice-pw")},
+			method: "keyboard-interactive", reason: "unknown user", n: 1},
+		{name: "keyboard-interactive for a key-only user", user: "dave", auth: []ssh.AuthMethod{answer("not-alice-pw")},
+			method: "keyboard-interactive", reason: "wrong password", n: 1},
 		{name: "wrong password", user: "alice", auth: []ssh.AuthMethod{ssh.Password("not-alice-pw")},
 			method: "password", reason: "wrong password", n: 1},
 		{name: "each wrong password", user: "alice", auth: []ssh.AuthMethod{ssh.RetryableAuthMethod(ssh.Password("not-alice-pw"), 3)},
@@ -265,13 +285,16 @@ func TestAuditFailedLogins(t *testing.T) {
 				}
 				return keyboardInteractiveOnce(ctx)
 			},
-			method: "publickey,keyboard-interactive", reason: "no accepted key", n: 1},
+			noKI: true, method: "publickey,keyboard-interactive", reason: "no accepted key", n: 1},
 		{name: "no accepted method", user: "alice", cb: keyboardInteractiveOnce,
-			method: "keyboard-interactive", reason: "no accepted method", n: 1},
+			noKI: true, method: "keyboard-interactive", reason: "no accepted method", n: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			logs := captureJSON(t)
-			e := newEnv(t, func(c *Config) { c.Users["dave"] = User{Keys: []ssh.PublicKey{daveKey.PublicKey()}} })
+			e := newEnv(t, func(c *Config) {
+				c.Users["dave"] = User{Keys: []ssh.PublicKey{daveKey.PublicKey()}}
+				c.NoKeyboardInteractive = tc.noKI
+			})
 			c, err := ssh.Dial("tcp", e.addr, &ssh.ClientConfig{User: tc.user, Auth: tc.auth, AuthCallback: tc.cb,
 				HostKeyCallback: ssh.FixedHostKey(e.hostPK)})
 			if err == nil {
