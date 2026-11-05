@@ -56,7 +56,7 @@ resource "aws_vpc_endpoint" "s3" {
   tags              = { Name = "${var.name}-s3" }
 }
 
-# The gateway itself: port 22 from clients (EC2), or 2222 from the NLB (ECS).
+# The gateway itself: the SFTP port from clients (EC2), or 2222 from the NLB (ECS).
 resource "aws_security_group" "gateway" {
   name        = "${var.name}-gateway"
   description = "sftp-s3 gateway"
@@ -75,7 +75,7 @@ resource "aws_vpc_security_group_ingress_rule" "ec2_clients" {
   security_group_id = aws_security_group.gateway.id
   description       = "SFTP clients"
   ip_protocol       = "tcp"
-  from_port         = 22
-  to_port           = 22
+  from_port         = var.port
+  to_port           = var.port
   cidr_ipv4         = each.value
 }

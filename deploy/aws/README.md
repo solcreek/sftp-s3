@@ -7,7 +7,7 @@ shapes measured in [docs/deploy-aws.md](../../docs/deploy-aws.md):
   NLB with one Elastic IP per AZ, at about $45–50 a month. Highly available;
   rolling deploys keep in-flight uploads for about 4–6 minutes.
 - `compute = "ec2"`: one t4g.small with an Elastic IP and the container on
-  port 22, at about $17 a month. A change replaces the instance, with about
+  the SFTP port, at about $17 a month. A change replaces the instance, with about
   2 minutes of downtime; the IP stays.
 
 Both shapes get the same base:
@@ -100,7 +100,8 @@ configuration. Instead:
 | variable | default | notes |
 |---|---|---|
 | `bucket_name` | required | |
-| `allowed_cidrs` | required | who may reach port 22 |
+| `allowed_cidrs` | required | who may reach the SFTP port |
+| `port` | `22` | public SFTP port; keep a replaced server's port (SFTPGo: 2022) so clients need no change |
 | `users` | `null` | `SFTP_USERS` entries, one per element; `null` = manage the parameter yourself |
 | `compute` | `"ecs"` | or `"ec2"` |
 | `image` | `ghcr.io/solcreek/sftp-s3:0.2` | any registry; private ECR images work too |
@@ -116,7 +117,7 @@ configuration. Instead:
 
 Outputs:
 
-- `sftp_address` and `public_ips`;
+- `sftp_address`, `sftp_port` and `public_ips`;
 - `host_key_fingerprint` and `known_hosts`;
 - `parameters`;
 - `bucket_policy_statement`.
