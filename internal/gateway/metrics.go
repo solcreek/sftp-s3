@@ -18,7 +18,7 @@ import (
 // Label values. The last entry of each set is "other", which catches a
 // value no entry names, so the set of series stays fixed whatever is passed.
 var (
-	loginMethods  = [...]string{"password", "publickey", "other"}
+	loginMethods  = [...]string{"password", "publickey", "keyboard-interactive", "other"}
 	failReasons   = [...]string{"unknown user", "wrong password", "banned", "no accepted method", "no accepted key", "other"}
 	opEvents      = [...]string{evUpload, evDownload, evMkdir, evRemove, evRmdir, evRename, evSetstat}
 	opResults     = [...]string{"ok", "failed"}

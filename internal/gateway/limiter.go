@@ -282,7 +282,8 @@ func later(a, b time.Time) time.Time {
 // refuses every login once remote is banned, even one already under way.
 // Call done with the handshake's error.
 //
-// Counted as failures, and logged as login_failed: each wrong password, and
+// Counted as failures, and logged as login_failed: each wrong password
+// (keyboard-interactive asks for the same password, and counts the same), and
 // a connection that ends without logging in after trying at least one
 // method, if no wrong password was counted for it already. Rejected public
 // keys are not counted one by one (clients offer every key they hold), and
@@ -306,18 +307,27 @@ func (s *Server) watchAuth(remote net.Addr, log *slog.Logger) (cfg *ssh.ServerCo
 			methods = append(methods, method)
 		}
 		banned = banned || errors.Is(err, errBanned)
-		if method == "password" && err != nil {
+		asksPassword := method == "password" || (method == methodKeyboardInteractive && c.KeyboardInteractiveCallback != nil)
+		if asksPassword && err != nil {
 			wrongPasswords++
 			s.bans.fail(remote)
 			audit(&s.metrics, log, evLoginFailed, "user", user, "method", method, "reason", failReason(err))
 		}
 	}
-	password, publicKey := c.PasswordCallback, c.PublicKeyCallback
+	password, publicKey, interactive := c.PasswordCallback, c.PublicKeyCallback, c.KeyboardInteractiveCallback
 	c.PasswordCallback = func(m ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
 		if s.bans.banned(remote) {
 			return nil, errBanned
 		}
 		return password(m, pass)
+	}
+	if interactive != nil {
+		c.KeyboardInteractiveCallback = func(m ssh.ConnMetadata, ask ssh.KeyboardInteractiveChallenge) (*ssh.Permissions, error) {
+			if s.bans.banned(remote) {
+				return nil, errBanned
+			}
+			return interactive(m, ask)
+		}
 	}
 	c.PublicKeyCallback = func(m ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
 		if s.bans.banned(remote) {

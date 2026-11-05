@@ -469,7 +469,7 @@ func TestMetricsCountConnectionLimitRejections(t *testing.T) {
 // Values outside a label set count as "other", so the series stay fixed.
 func TestMetricsRecordOther(t *testing.T) {
 	var m metrics
-	m.record(evLogin, []any{"method", "keyboard-interactive"})
+	m.record(evLogin, []any{"method", "gssapi-with-mic"})
 	m.record(evLoginFailed, []any{"reason", "something new"})
 	m.record(evLoginFailed, []any{"dangling"})
 	m.record("not an event", []any{"result", "ok"})
