@@ -204,8 +204,9 @@ func convertSFTPGoUser(su sftpgoUser, warn io.Writer) (importedUser, bool) {
 	u := importedUser{Username: name, Bucket: s3.Bucket, Prefix: s3.KeyPrefix}
 	// A login method SFTPGo denies stays denied by leaving its credential
 	// out. "password" denies it on every protocol, "password-over-SSH" on
-	// SFTP only; the gateway offers neither keyboard-interactive nor the
-	// multi-step methods, so denying those changes nothing here.
+	// SFTP only. The gateway's keyboard-interactive asks for that same
+	// password, and it offers no multi-step methods, so denying those
+	// changes nothing here.
 	denied := su.Filters.DeniedLoginMethods
 	if su.Password != "" {
 		switch {

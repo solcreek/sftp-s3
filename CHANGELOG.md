@@ -4,6 +4,19 @@ All notable changes are listed here. The project follows
 [Semantic Versioning](https://semver.org/); before 1.0, minor versions may
 break configuration.
 
+## Unreleased
+
+- `keyboard-interactive` login, **on by default**: it asks for the user's
+  password as one hidden question and checks it exactly like `password`
+  (bcrypt or plaintext, failure delay, bans, `SFTP_MAX_AUTH_TRIES`). SFTPGo
+  and OpenSSH offer it, and clients such as FileZilla prefer it, so users
+  moved from SFTPGo log in as before. ssh offers methods per server, so
+  key-only users are asked too and always fail. `SFTP_KEYBOARD_INTERACTIVE=off`
+  (`gateway.Config.NoKeyboardInteractive`) stops offering it.
+  - **Log and metric changes:** `login` and `login_failed` events can have
+    `method=keyboard-interactive`, and `sftp_s3_logins_total` has a
+    `keyboard-interactive` series (it counted as `other` before).
+
 ## 0.2.1 — 2026-11-05
 
 - AWS module: `port` sets the public SFTP port (default 22), so a server
