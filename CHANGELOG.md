@@ -4,7 +4,7 @@ All notable changes are listed here. The project follows
 [Semantic Versioning](https://semver.org/); before 1.0, minor versions may
 break configuration.
 
-## Unreleased
+## 0.2.1 — 2026-11-05
 
 - AWS module: `port` sets the public SFTP port (default 22), so a server
   replacing SFTPGo can keep 2022 and its clients need no change. The
