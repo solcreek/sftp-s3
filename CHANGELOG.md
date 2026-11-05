@@ -21,6 +21,11 @@ break configuration.
   stored as Advanced parameters instead of failing. The README's
   `put-parameter` commands pass `--tier Intelligent-Tiering` and read the
   values with `file://`.
+- AWS module: on EC2 the gateway logs to the CloudWatch log group
+  `/<name>` too, through docker's `awslogs` driver; before, the audit log
+  was lost with a replaced instance. Applying this replaces an EC2
+  instance (about 2 minutes, same address). ECS stacks keep their log
+  group (a `moved` block renames it in the state).
 
 ## 0.2.0 — 2026-11-05
 

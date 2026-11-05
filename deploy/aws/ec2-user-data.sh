@@ -22,6 +22,8 @@ esac
 docker pull "$image"
 docker rm -f sftp-s3 2>/dev/null || true
 exec docker run --rm --name sftp-s3 -p ${port}:2222 \
+  --log-driver awslogs --log-opt awslogs-region=${region} \
+  --log-opt awslogs-group=${log_group} --log-opt awslogs-stream=ec2-$(hostname) \
   -e PORT=2222 -e AWS_REGION=${region} \
   -e S3_BUCKET=${bucket} -e S3_PREFIX=${s3_prefix} -e SFTP_MAX_CONNECTIONS=${max_connections} \
   -e SFTP_LOG_FORMAT=json \

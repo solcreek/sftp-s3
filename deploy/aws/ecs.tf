@@ -17,12 +17,6 @@ resource "aws_ecs_cluster" "this" {
   name  = var.name
 }
 
-resource "aws_cloudwatch_log_group" "ecs" {
-  count             = local.ecs
-  name              = "/${var.name}"
-  retention_in_days = var.log_retention_days
-}
-
 data "aws_iam_policy_document" "ecs_exec_trust" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -89,7 +83,7 @@ resource "aws_ecs_task_definition" "this" {
     logConfiguration = {
       logDriver = "awslogs"
       options = {
-        awslogs-group         = aws_cloudwatch_log_group.ecs[0].name
+        awslogs-group         = aws_cloudwatch_log_group.gateway.name
         awslogs-region        = local.region
         awslogs-stream-prefix = "ecs"
       }

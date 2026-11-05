@@ -33,6 +33,17 @@ resource "aws_iam_role_policy" "gateway_s3" {
   policy = data.aws_iam_policy_document.gateway_s3.json
 }
 
+# The audit log outlives the task or instance that wrote it.
+resource "aws_cloudwatch_log_group" "gateway" {
+  name              = "/${var.name}"
+  retention_in_days = var.log_retention_days
+}
+
+moved {
+  from = aws_cloudwatch_log_group.ecs[0]
+  to   = aws_cloudwatch_log_group.gateway
+}
+
 # Reading the secrets: the ECS execution role injects them; on EC2 the
 # instance role reads them at start.
 data "aws_iam_policy_document" "read_params" {

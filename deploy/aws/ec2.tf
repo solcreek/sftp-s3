@@ -39,6 +39,21 @@ resource "aws_iam_role_policy" "ec2_params" {
   policy = data.aws_iam_policy_document.read_params.json
 }
 
+# docker's awslogs driver runs on the host with the instance's credentials.
+data "aws_iam_policy_document" "ec2_logs" {
+  statement {
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = ["${aws_cloudwatch_log_group.gateway.arn}:*"]
+  }
+}
+
+resource "aws_iam_role_policy" "ec2_logs" {
+  count  = local.ec2
+  name   = "logs"
+  role   = aws_iam_role.gateway.id
+  policy = data.aws_iam_policy_document.ec2_logs.json
+}
+
 resource "aws_iam_instance_profile" "ec2" {
   count = local.ec2
   name  = "${var.name}-gateway"
@@ -65,6 +80,7 @@ resource "aws_instance" "this" {
   user_data = templatefile("${path.module}/ec2-user-data.sh", {
     region          = local.region
     port            = var.port
+    log_group       = aws_cloudwatch_log_group.gateway.name
     image           = var.image
     config_hash     = local.config_hash
     param_prefix    = "/${var.name}"
