@@ -10,6 +10,11 @@ break configuration.
   replacing SFTPGo can keep 2022 and its clients need no change. The
   `known_hosts` output writes `[host]:port` for a non-default port, and a
   new `sftp_port` output reports it.
+- AWS module: `extra_bucket_names` lets the gateway role use more existing
+  buckets, for JSON users with buckets of their own. The module does not
+  change them; the `extra_bucket_policy_statements` output holds each
+  one's VPC-endpoint statement to merge by hand, and `gateway_role_arn`
+  names the role.
 
 ## 0.2.0 — 2026-11-05
 

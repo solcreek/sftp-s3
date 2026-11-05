@@ -95,6 +95,20 @@ configuration. Instead:
 - add an `AbortIncompleteMultipartUpload` lifecycle rule. A task killed
   mid-upload leaves parts behind.
 
+## Users in several buckets
+
+The JSON users format gives each user a bucket of their own
+([Users in their own buckets](../../README.md#users-in-their-own-buckets)). List every such bucket other than
+`bucket_name` in `extra_bucket_names`. The gateway role may then read and
+write all of each, and they are treated like an existing bucket: the module
+does not change them. For each, merge its entry of
+`extra_bucket_policy_statements` into the bucket policy and add an
+`AbortIncompleteMultipartUpload` rule. The buckets must be in the
+provider's region, which the S3 gateway endpoint serves.
+
+JSON users go in the `users` parameter as they are (`users = null`, then
+`put-parameter`), or as one element: `users = [file("users.json")]`.
+
 ## Inputs
 
 | variable | default | notes |
@@ -106,6 +120,7 @@ configuration. Instead:
 | `compute` | `"ecs"` | or `"ec2"` |
 | `image` | `ghcr.io/solcreek/sftp-s3:0.2` | any registry; private ECR images work too |
 | `create_bucket` | `true` | `false`: use an existing bucket (see above) |
+| `extra_bucket_names` | `[]` | more existing buckets, for JSON users with buckets of their own (see above) |
 | `generate_host_key` | `true` | `false`: manage the parameter yourself |
 | `s3_prefix` | `""` | every user lives under `<prefix><user>/` |
 | `max_connections` | from memory | about 120 MiB per concurrent large upload: 3 per 512 MiB task, 14 on a t4g.small |
@@ -120,7 +135,8 @@ Outputs:
 - `sftp_address`, `sftp_port` and `public_ips`;
 - `host_key_fingerprint` and `known_hosts`;
 - `parameters`;
-- `bucket_policy_statement`.
+- `bucket_policy_statement` and `extra_bucket_policy_statements`;
+- `gateway_role_arn`.
 
 ## Verified
 

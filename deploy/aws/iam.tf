@@ -19,11 +19,11 @@ resource "aws_iam_role" "gateway" {
 data "aws_iam_policy_document" "gateway_s3" {
   statement {
     actions   = ["s3:ListBucket"]
-    resources = [local.bucket_arn]
+    resources = concat([local.bucket_arn], values(local.extra_bucket_arns))
   }
   statement {
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:AbortMultipartUpload"]
-    resources = ["${local.bucket_arn}/${var.s3_prefix}*"]
+    resources = concat(["${local.bucket_arn}/${var.s3_prefix}*"], [for arn in values(local.extra_bucket_arns) : "${arn}/*"])
   }
 }
 

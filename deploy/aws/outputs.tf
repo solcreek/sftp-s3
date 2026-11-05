@@ -36,3 +36,13 @@ output "bucket_policy_statement" {
   description = "With create_bucket = false: merge this into the existing bucket's policy by hand."
   value       = var.create_bucket ? null : data.aws_iam_policy_document.bucket.json
 }
+
+output "extra_bucket_policy_statements" {
+  description = "Per bucket in extra_bucket_names: merge this into that bucket's policy by hand."
+  value       = { for name, doc in data.aws_iam_policy_document.extra_bucket : name => doc.json }
+}
+
+output "gateway_role_arn" {
+  description = "The role the gateway runs as, for bucket policies kept elsewhere."
+  value       = aws_iam_role.gateway.arn
+}
