@@ -7,6 +7,10 @@
 # generated host key (which is). To keep them out of the state, set
 # users = null and generate_host_key = false, then write the values with
 # the AWS CLI; the module creates placeholders and never touches them again.
+#
+# Intelligent-Tiering: a Standard parameter holds 4 KB, and three host keys
+# with RSA-4096 (as an SFTPGo server has) are larger. AWS moves a value
+# that needs it to Advanced, which is billed; smaller values stay free.
 
 resource "tls_private_key" "host" {
   count     = var.generate_host_key ? 1 : 0
@@ -25,6 +29,7 @@ resource "aws_ssm_parameter" "users" {
   count            = var.users == null ? 0 : 1
   name             = "/${var.name}/users"
   type             = "SecureString"
+  tier             = "Intelligent-Tiering"
   value_wo         = local.users_value
   value_wo_version = parseint(substr(sha256(local.users_value), 0, 8), 16)
 }
@@ -33,6 +38,7 @@ resource "aws_ssm_parameter" "users_external" {
   count = var.users == null ? 1 : 0
   name  = "/${var.name}/users"
   type  = "SecureString"
+  tier  = "Intelligent-Tiering"
   value = "set-me"
   lifecycle {
     ignore_changes = [value]
@@ -43,6 +49,7 @@ resource "aws_ssm_parameter" "host_key" {
   count            = var.generate_host_key ? 1 : 0
   name             = "/${var.name}/host-key"
   type             = "SecureString"
+  tier             = "Intelligent-Tiering"
   value_wo         = local.host_key_value
   value_wo_version = parseint(substr(sha256(local.host_key_value), 0, 8), 16)
 }
@@ -51,6 +58,7 @@ resource "aws_ssm_parameter" "host_key_external" {
   count = var.generate_host_key ? 0 : 1
   name  = "/${var.name}/host-key"
   type  = "SecureString"
+  tier  = "Intelligent-Tiering"
   value = "set-me"
   lifecycle {
     ignore_changes = [value]
