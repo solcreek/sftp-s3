@@ -16,8 +16,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// The parts of an SFTPGo data dump (GET /api/v2/dumpdata?output-data=1, or
-// `sftpgo dumpdata`) that the import reads. Everything else, notably the
+// The parts of an SFTPGo data dump (GET /api/v2/dumpdata?output-data=1) that
+// the import reads. Everything else, notably the
 // encrypted S3 access_secret, is left undecoded: it is never read, so it
 // cannot leak into the output or a warning.
 type sftpgoDump struct {
@@ -85,7 +85,7 @@ type importedFile struct {
 	Users []importedUser `json:"users"`
 }
 
-const importUsage = "Usage: sftp-s3 import-sftpgo <dump.json>\n\nConverts the users of an SFTPGo data dump (sftpgo dumpdata, or\nGET /api/v2/dumpdata?output-data=1) to a JSON users file on stdout.\nWarnings go to stderr.\n"
+const importUsage = "Usage: sftp-s3 import-sftpgo <dump.json>\n\nConverts the users of an SFTPGo data dump (from its REST API,\nGET /api/v2/dumpdata?output-data=1) to a JSON users file on stdout.\nWarnings go to stderr.\n"
 
 // importSFTPGo runs the import-sftpgo subcommand and returns its exit code:
 // 0 with the users file on stdout, 1 when the dump cannot be read or has no
