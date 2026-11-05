@@ -15,6 +15,12 @@ break configuration.
   change them; the `extra_bucket_policy_statements` output holds each
   one's VPC-endpoint statement to merge by hand, and `gateway_role_arn`
   names the role.
+- AWS module: the users and host-key parameters use the
+  `Intelligent-Tiering` tier, so values over the 4 KB Standard limit (an
+  SFTPGo server's three host keys with RSA-4096 are about 4.3 KB) are
+  stored as Advanced parameters instead of failing. The README's
+  `put-parameter` commands pass `--tier Intelligent-Tiering` and read the
+  values with `file://`.
 
 ## 0.2.0 — 2026-11-05
 

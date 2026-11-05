@@ -74,9 +74,15 @@ and `generate_host_key = false`. The module then creates placeholder
 parameters and never touches their values; write them yourself:
 
 ```sh
-aws ssm put-parameter --overwrite --type SecureString --name /sftp-s3/users    --value "$(cat users)"
-aws ssm put-parameter --overwrite --type SecureString --name /sftp-s3/host-key --value "$(cat host_ed25519)"
+aws ssm put-parameter --overwrite --type SecureString --tier Intelligent-Tiering --name /sftp-s3/users    --value "file://users"
+aws ssm put-parameter --overwrite --type SecureString --tier Intelligent-Tiering --name /sftp-s3/host-key --value "file://host_keys"
 ```
+
+`--tier Intelligent-Tiering` matters for values over 4 KB, the Standard
+limit: several host keys with an RSA-4096 one (about 4.3 KB for an
+SFTPGo server's three) or a long users file. AWS then stores the value as
+an Advanced parameter, about $0.05 a month; smaller values stay Standard
+and free. `file://` keeps the keys off the command line.
 
 Then restart the gateway:
 
