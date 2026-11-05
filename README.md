@@ -136,7 +136,9 @@ key type. OpenSSH, PKCS#8, SEC 1 (`EC PRIVATE KEY`) and PKCS#1
 
 ```sh
 cat id_ed25519 id_ecdsa id_rsa > host_keys      # copied from the old server
-SFTP_HOST_KEY_FILE=host_keys sftp-s3 -check     # prints each key's type and fingerprint
+# -check needs users and a region as well; it prints each key's type and
+# fingerprint, then reaches every bucket
+SFTP_HOST_KEY_FILE=host_keys SFTP_USERS_FILE=users.json S3_REGION=... sftp-s3 -check
 ssh-keyscan -p 22 old-server | ssh-keygen -lf - # what clients have pinned
 ```
 
@@ -377,7 +379,8 @@ Configuration is environment-only; the flags are tools:
 keys, and their bucket and key prefix.
 
 ```sh
-# from the REST API (an admin token), or run `sftpgo dumpdata` on the host
+# the dump comes from the REST API: SFTPGo 2.7.6 has no dumpdata command.
+# An admin's token: curl -u <admin> https://sftpgo.example.com/api/v2/token
 curl -fsS -H "Authorization: Bearer $TOKEN" \
   "https://sftpgo.example.com/api/v2/dumpdata?output-data=1" > dump.json
 sftp-s3 import-sftpgo dump.json > users.json   # warnings go to stderr
