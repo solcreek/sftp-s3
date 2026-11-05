@@ -9,9 +9,15 @@ data "aws_s3_bucket" "existing" {
   bucket = var.bucket_name
 }
 
+data "aws_s3_bucket" "extra" {
+  for_each = toset(var.extra_bucket_names)
+  bucket   = each.value
+}
+
 locals {
-  bucket_arn = var.create_bucket ? aws_s3_bucket.this[0].arn : data.aws_s3_bucket.existing[0].arn
-  bucket     = var.create_bucket ? aws_s3_bucket.this[0].bucket : data.aws_s3_bucket.existing[0].bucket
+  bucket_arn        = var.create_bucket ? aws_s3_bucket.this[0].arn : data.aws_s3_bucket.existing[0].arn
+  bucket            = var.create_bucket ? aws_s3_bucket.this[0].bucket : data.aws_s3_bucket.existing[0].bucket
+  extra_bucket_arns = { for name, b in data.aws_s3_bucket.extra : name => b.arn }
 }
 
 resource "aws_s3_bucket_public_access_block" "this" {
@@ -49,6 +55,30 @@ data "aws_iam_policy_document" "bucket" {
       identifiers = ["*"]
     }
     resources = [local.bucket_arn, "${local.bucket_arn}/*"]
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:PrincipalArn"
+      values   = [aws_iam_role.gateway.arn]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:SourceVpce"
+      values   = [aws_vpc_endpoint.s3.id]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "extra_bucket" {
+  for_each = local.extra_bucket_arns
+  statement {
+    sid     = "GatewayOnlyViaVpcEndpoint"
+    effect  = "Deny"
+    actions = ["s3:*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    resources = [each.value, "${each.value}/*"]
     condition {
       test     = "ArnEquals"
       variable = "aws:PrincipalArn"

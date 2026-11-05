@@ -48,6 +48,18 @@ variable "create_bucket" {
   default     = true
 }
 
+variable "extra_bucket_names" {
+  description = <<-EOT
+    Existing buckets that users of the JSON users format name as their own
+    bucket. The gateway may read and write all of each. The module never
+    changes them: merge `extra_bucket_policy_statements` into their policies
+    and add an AbortIncompleteMultipartUpload rule by hand. All must be in
+    the provider's region.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "s3_prefix" {
   description = "Key prefix in front of every user's directory (S3_PREFIX), e.g. \"sftp/\"."
   type        = string
