@@ -4,7 +4,7 @@ All notable changes are listed here. The project follows
 [Semantic Versioning](https://semver.org/); before 1.0, minor versions may
 break configuration.
 
-## Unreleased
+## 0.2.2 — 2026-11-05
 
 - `keyboard-interactive` login, **on by default**: it asks for the user's
   password as one hidden question and checks it exactly like `password`
