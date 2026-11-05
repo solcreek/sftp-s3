@@ -399,6 +399,9 @@ SFTP_USERS_FILE=users.json S3_REGION=... sftp-s3 -check
 - Login methods denied in SFTPGo (`denied_login_methods`) stay denied: the
   password hash is not copied when `password` or `password-over-SSH` is
   denied, nor are the public keys when `publickey` is, each with a warning.
+  A user denied only `keyboard-interactive` keeps the password, with a
+  warning: sftp-s3's `keyboard-interactive` accepts nothing but that password,
+  and `SFTP_KEYBOARD_INTERACTIVE=off` stops offering it to every user.
 - Imported, with a warning, but without: virtual folders, quotas, IP
   filters, permissions other than full access, group settings, and
   expiration dates still in the future.

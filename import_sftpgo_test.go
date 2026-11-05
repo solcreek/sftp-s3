@@ -419,6 +419,7 @@ func TestConvertSFTPGo(t *testing.T) {
 				`user "keyonly": password login is denied in SFTPGo; password not copied`,
 				`user "nosshpw": password login is denied`,
 				`user "pwonly": public key login is denied in SFTPGo; public keys not copied`,
+				`user "kbd": keyboard-interactive login is denied in SFTPGo; sftp-s3 offers it with the same password`,
 				`user "none": password login is denied`,
 				`user "none": public key login is denied`,
 				`skipped user "none": no usable password or public key`,
