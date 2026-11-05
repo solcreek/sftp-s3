@@ -172,8 +172,9 @@ func (connMeta) ServerVersion() []byte { return nil }
 func (connMeta) RemoteAddr() net.Addr  { return &net.TCPAddr{} }
 func (connMeta) LocalAddr() net.Addr   { return &net.TCPAddr{} }
 
-// ssh refuses an answer count that does not match the questions before the
-// callback sees it; the callback must not rely on that.
+// ssh refuses an answer count that does not match the questions with an
+// error from the prompt; the callback must not rely on that, and either way
+// the client waits out the failure delay.
 func TestKeyboardInteractiveNeedsExactlyOneAnswer(t *testing.T) {
 	const delay = 50 * time.Millisecond
 	a := authenticator{
@@ -191,10 +192,14 @@ func TestKeyboardInteractiveNeedsExactlyOneAnswer(t *testing.T) {
 			t.Errorf("%d answers: refused after %v, want the %v failure delay", len(answers), took, delay)
 		}
 	}
-	broken := errors.New("connection reset")
+	broken := errors.New("ssh: parse error in message type 61") // what ssh returns for a wrong count
 	ask := func(string, string, []string, []bool) ([]string, error) { return nil, broken }
+	start := time.Now()
 	if _, err := a.keyboardInteractive(connMeta{"alice"}, ask); !errors.Is(err, broken) {
 		t.Errorf("a failed prompt: err %v, want it passed on", err)
+	}
+	if took := time.Since(start); took < delay {
+		t.Errorf("a failed prompt: refused after %v, want the %v failure delay", took, delay)
 	}
 	ask = func(string, string, []string, []bool) ([]string, error) { return []string{"alice-pw"}, nil }
 	p, err := a.keyboardInteractive(connMeta{"alice"}, ask)
