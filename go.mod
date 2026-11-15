@@ -12,8 +12,8 @@ require (
 	github.com/johannesboyne/gofakes3 v1.2.0
 	github.com/pires/go-proxyproto v0.16.0
 	github.com/pkg/sftp v1.13.12
-	golang.org/x/crypto v0.58.0
-	golang.org/x/term v0.47.0
+	golang.org/x/crypto v0.59.0
+	golang.org/x/term v0.48.0
 )
 
 require (
@@ -33,6 +33,6 @@ require (
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/ryszard/goskiplist v0.0.0-20150312221310-2dfbae5fcf46 // indirect
 	go.shabbyrobe.org/gocovmerge v0.0.0-20230507111327-fa4f82cfbf4d // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/tools v0.8.0 // indirect
 )
